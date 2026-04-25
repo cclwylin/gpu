@@ -187,8 +187,8 @@ int sc_main(int /*argc*/, char** /*argv*/) {
 
     const std::array<gpu::sim::Vec4, 3> verts = {{
         {{16.0f,  4.0f, 0.5f, 1.0f}},
-        {{ 4.0f, 28.0f, 0.5f, 1.0f}},
         {{28.0f, 28.0f, 0.5f, 1.0f}},
+        {{ 4.0f, 28.0f, 0.5f, 1.0f}},
     }};
     // PA does a perspective divide + viewport transform; to land at
     // the same screen-space coords we used in the RS_ca standalone

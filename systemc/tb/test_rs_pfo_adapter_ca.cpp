@@ -126,8 +126,8 @@ int sc_main(int /*argc*/, char** /*argv*/) {
     rj.triangles.resize(1);
     auto& tri = rj.triangles[0];
     tri[0][0] = {{16.0f,  4.0f, 0.5f, 1.0f}};
-    tri[1][0] = {{ 4.0f, 28.0f, 0.5f, 1.0f}};
-    tri[2][0] = {{28.0f, 28.0f, 0.5f, 1.0f}};
+    tri[1][0] = {{28.0f, 28.0f, 0.5f, 1.0f}};
+    tri[2][0] = {{ 4.0f, 28.0f, 0.5f, 1.0f}};
 
     src.push(reinterpret_cast<uint64_t>(&rj));
     sc_core::sc_start(500, sc_core::SC_US);

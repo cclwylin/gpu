@@ -21,14 +21,27 @@ void ScToPaAdapterCa::thread() {
     out_data_o.write(0);
 
     while (true) {
-        // Stage one fresh PrimAssemblyJob and fill it.
+        // Wait for the first vertex of the next batch BEFORE touching
+        // staged_. This avoids racing with the downstream consumer
+        // (PA) on the previous batch — single-buffered storage.
+        // Phase 2.x: switch to a ping-pong / N-deep ring to avoid the
+        // adapter throughput-stalling on consumer back-pressure.
+        job_ready_o.write(true);
+        do { wait(); } while (!job_valid_i.read());
+        ShaderJob* const first =
+            reinterpret_cast<ShaderJob*>(job_data_i.read());
+        job_ready_o.write(false);
+
+        // Now safe to repaint staged_ for this batch.
         staged_ = PrimAssemblyJob{};
         staged_.vp_w = vp_w;
         staged_.vp_h = vp_h;
         staged_.cull_back = cull_back;
         staged_.vs_outputs.assign(batch_size, {});
+        if (first) staged_.vs_outputs[0] = first->outputs;
+        wait();
 
-        for (int i = 0; i < batch_size; ++i) {
+        for (int i = 1; i < batch_size; ++i) {
             job_ready_o.write(true);
             do { wait(); } while (!job_valid_i.read());
             const uint64_t job_word = job_data_i.read();

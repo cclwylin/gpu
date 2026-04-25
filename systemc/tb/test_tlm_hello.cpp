@@ -66,7 +66,14 @@ int sc_main(int /*argc*/, char** /*argv*/) {
         trans.set_byte_enable_ptr(nullptr);
         trans.set_dmi_allowed(false);
         trans.set_response_status(tlm::TLM_INCOMPLETE_RESPONSE);
-        target_socket->b_transport(trans, delay);
+        // simple_target_socket's operator-> returns the BW interface; we
+        // need the FW interface to invoke b_transport. get_base_export()
+        // returns sc_export<tlm_fw_transport_if<>>; its get_interface()
+        // returns sc_interface*, which we know is a tlm_fw_transport_if.
+        auto* fw = dynamic_cast<tlm::tlm_fw_transport_if<>*>(
+            target_socket.get_base_export().get_interface());
+        if (!fw) { std::fprintf(stderr, "FAIL: no fw if\n"); return false; }
+        fw->b_transport(trans, delay);
         return trans.get_response_status() == tlm::TLM_OK_RESPONSE;
     };
 

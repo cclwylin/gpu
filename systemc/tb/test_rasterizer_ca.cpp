@@ -89,9 +89,12 @@ int sc_main(int /*argc*/, char** /*argv*/) {
     job.triangles.resize(1);
     auto& tri = job.triangles[0];
     // pos: vec4{x, y, depth, 1/w}; varying slots zeroed.
+    // RS's edge-fn convention: positive area = "front face" (w >= 0
+    // accepts pixels). Wound clockwise in screen space (y-down):
+    //   top, bottom-right, bottom-left.
     tri[0][0] = {{16.0f,  4.0f, 0.5f, 1.0f}};
-    tri[1][0] = {{ 4.0f, 28.0f, 0.5f, 1.0f}};
-    tri[2][0] = {{28.0f, 28.0f, 0.5f, 1.0f}};
+    tri[1][0] = {{28.0f, 28.0f, 0.5f, 1.0f}};
+    tri[2][0] = {{ 4.0f, 28.0f, 0.5f, 1.0f}};
 
     src.push(reinterpret_cast<uint64_t>(&job));
     sc_core::sc_start(50, sc_core::SC_US);
