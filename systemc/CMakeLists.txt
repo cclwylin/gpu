@@ -40,6 +40,7 @@ add_library(gpu_systemc STATIC
     blocks/primitiveassembly/src/primitiveassembly_ca.cpp
     blocks/rasterizer/src/rasterizer_lt.cpp
     blocks/rasterizer/src/rasterizer_ca.cpp
+    blocks/textureunit/src/textureunit_ca.cpp
     top/src/gpu_top.cpp
     top/src/gpu_top_ca.cpp
 )
@@ -50,8 +51,9 @@ target_include_directories(gpu_systemc PUBLIC
     blocks/vertexfetch/include
     blocks/primitiveassembly/include
     blocks/rasterizer/include
+    blocks/textureunit/include
     top/include)
-target_link_libraries(gpu_systemc PUBLIC SystemC::systemc gpu_compiler)
+target_link_libraries(gpu_systemc PUBLIC SystemC::systemc gpu_compiler gpu_sw_ref)
 # SystemC lib is a dylib on macOS; CMake may need the rpath.
 set_target_properties(gpu_systemc PROPERTIES
     INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
@@ -116,5 +118,12 @@ if(GPU_BUILD_TESTS)
             INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
             BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
         add_test(NAME systemc.gpu_top_ca COMMAND test_gpu_top_ca)
+
+        add_executable(test_textureunit_ca tb/test_textureunit_ca.cpp)
+        target_link_libraries(test_textureunit_ca PRIVATE gpu_systemc)
+        set_target_properties(test_textureunit_ca PROPERTIES
+            INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
+            BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
+        add_test(NAME systemc.tmu_ca COMMAND test_textureunit_ca)
     endif()
 endif()

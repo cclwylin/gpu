@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "gpu/texture.h"
 #include "gpu_compiler/sim.h"
 
 namespace gpu::systemc {
@@ -56,6 +57,15 @@ struct RasterJob {
     bool msaa_4x = false;
     int  varying_count = 0;
     std::vector<RasterFragment> fragments;     // populated by RS
+};
+
+// Sprint 24 TextureJob — batch of (u,v) sample requests against one
+// bound texture; results land in `samples` in order.
+struct TextureSample { float u = 0.0f, v = 0.0f; };
+struct TextureJob {
+    const gpu::Texture*           tex = nullptr;
+    std::vector<TextureSample>    requests;
+    std::vector<std::array<float, 4>> samples;   // filled by TMU
 };
 
 }  // namespace gpu::systemc
