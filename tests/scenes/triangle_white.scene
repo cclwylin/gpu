@@ -1,0 +1,15 @@
+# Conformance scene: white triangle on black, no MSAA, no blend, no depth.
+# Format is line-based key=value for Sprint 11 simplicity.
+# Lines starting with # are comments.
+width  32
+height 32
+msaa   0
+clear  0
+# vertex layout: x y z w  r g b a   (one vertex per line below the 'verts' tag)
+verts
+ 0.0   0.7  0.0  1.0   1.0  1.0  1.0  1.0
+-0.7  -0.7  0.0  1.0   1.0  1.0  1.0  1.0
+ 0.7  -0.7  0.0  1.0   1.0  1.0  1.0  1.0
+end
+# Pixel sentinel: at least N pixels with R>=240
+expect_min_white 100
