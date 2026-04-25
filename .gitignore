@@ -1,0 +1,55 @@
+# Build
+build/
+out/
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.exe
+
+# SystemC / EDA
+*.vcd
+*.fsdb
+*.wlf
+*.log
+*.jou
+work/
+xsim.dir/
+transcript
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Generated (from specs/*.yaml)
+generated/
+auto_*.h
+auto_*.v
+auto_*.sv
+
+# Coverage / trace dumps
+coverage/
+traces/
+*.trace
+
+# Large binaries (use Git-LFS instead)
+*.bin
+*.img
+*.tar
+*.gz
+*.zip
+
+# FPGA
+*.bit
+*.mcs
+*.ltx

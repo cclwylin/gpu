@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Lint
+  # ---------------------------------------------------------------------------
+  lint:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format clang-tidy python3-pip
+          pip3 install black ruff mypy
+      - name: C++ / SystemC clang-format check
+        run: bash ci/check_clang_format.sh
+      - name: Python lint (ruff + black check)
+        run: bash ci/check_python.sh
+      - name: YAML validate (specs/*.yaml)
+        run: bash ci/check_specs.sh
+
+  # ---------------------------------------------------------------------------
+  # Verilator / Verilog lint (Phase 3+)
+  # ---------------------------------------------------------------------------
+  rtl-lint:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Verilator
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y verilator
+      - name: Run verilator --lint-only
+        run: bash ci/check_verilog.sh
+
+  # ---------------------------------------------------------------------------
+  # Build + smoke test
+  # ---------------------------------------------------------------------------
+  build:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Setup deps
+        run: bash ci/setup_deps.sh
+      - name: Build sw_ref + compiler + systemc
+        run: bash ci/build.sh ${{ matrix.compiler }}
+      - name: Smoke test (10 scene, <5 min)
+        run: bash ci/smoke.sh
+
+  # ---------------------------------------------------------------------------
+  # Regmap / ISA generation sanity (no drift)
+  # ---------------------------------------------------------------------------
+  gen-check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Regenerate from specs/
+        run: bash ci/regen.sh
+      - name: Assert no drift in generated files
+        run: |
+          git diff --exit-code || (
+            echo "::error::Generated files out of sync with specs/"
+            exit 1
+          )

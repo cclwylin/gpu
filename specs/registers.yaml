@@ -1,0 +1,260 @@
+# ------------------------------------------------------------------------------
+# GPU Register Map
+# ------------------------------------------------------------------------------
+# Single source of truth for all CSR.
+# Tooling (tools/regmap_gen/) consumes this YAML to generate:
+#   - C header  (driver/include/gpu_regs.h)
+#   - SystemC   (systemc/common/gen/regs.h)
+#   - Verilog   (rtl/blocks/csr/gen/csr_regs.sv)
+#   - Markdown  (docs/gen/register_map.md)
+# ------------------------------------------------------------------------------
+
+version: 0.1
+status: draft
+last_updated: 2026-04-25
+
+# Address space configuration
+address_space:
+  base: 0x00000000
+  size: 0x00020000     # 128 KB total CSR space
+  bus:  APB
+  data_width: 32
+
+# Register bank definitions. 每個 bank 獨立 offset range。
+banks:
+
+  # ----------------------------------------------------------------------------
+  # CP — Command Processor
+  # ----------------------------------------------------------------------------
+  - name: CP
+    base: 0x00000000
+    size: 0x00001000
+    description: Command Processor state + ring buffer control
+    registers:
+      - name: CP_CTRL
+        offset: 0x000
+        access: RW
+        reset: 0x0
+        fields:
+          - {name: ENABLE,  bits: "0",    desc: "1 = CP active"}
+          - {name: RESET,   bits: "1",    desc: "Soft reset"}
+          - {name: HALT,    bits: "2",    desc: "Halt after current packet"}
+      - name: CP_RING_BASE
+        offset: 0x004
+        access: RW
+        reset: 0x0
+        fields:
+          - {name: ADDR, bits: "31:0", desc: "Ring buffer physical base addr (4KB aligned)"}
+      - name: CP_RING_SIZE
+        offset: 0x008
+        access: RW
+        reset: 0x0
+        fields:
+          - {name: LOG2, bits: "4:0", desc: "log2(size in bytes), min 12, max 24"}
+      - name: CP_RING_HEAD
+        offset: 0x00C
+        access: RO
+        reset: 0x0
+        fields:
+          - {name: OFFSET, bits: "23:0", desc: "HW-maintained read offset"}
+      - name: CP_RING_TAIL
+        offset: 0x010
+        access: RW
+        reset: 0x0
+        fields:
+          - {name: OFFSET, bits: "23:0", desc: "SW-written write offset"}
+      - name: CP_STATUS
+        offset: 0x014
+        access: RO
+        fields:
+          - {name: IDLE,     bits: "0",   desc: "1 = idle"}
+          - {name: STALL,    bits: "1",   desc: "1 = stalled waiting pipeline"}
+          - {name: ERR,      bits: "2",   desc: "1 = error latched"}
+      - name: CP_IRQ_STATUS
+        offset: 0x018
+        access: RW1C
+        fields:
+          - {name: DONE,     bits: "0",   desc: "Submission done"}
+          - {name: ERR,      bits: "1",   desc: "Error occurred"}
+
+  # ----------------------------------------------------------------------------
+  # MMU
+  # ----------------------------------------------------------------------------
+  - name: MMU
+    base: 0x00001000
+    size: 0x00001000
+    description: MMU + TLB control
+    registers:
+      - name: MMU_CTRL
+        offset: 0x000
+        access: RW
+        fields:
+          - {name: ENABLE,   bits: "0",  desc: "1 = translate; 0 = passthrough"}
+          - {name: TLB_FLUSH, bits: "1", desc: "Write 1 = flush all TLB"}
+      - name: MMU_PT_BASE
+        offset: 0x004
+        access: RW
+        fields:
+          - {name: ADDR, bits: "31:0", desc: "Page table root physical addr"}
+      - name: MMU_FAULT_ADDR
+        offset: 0x008
+        access: RO
+        fields:
+          - {name: VADDR, bits: "31:0", desc: "Virtual addr at last fault"}
+      - name: MMU_FAULT_STATUS
+        offset: 0x00C
+        access: RW1C
+        fields:
+          - {name: VALID,  bits: "0",    desc: "Fault latched"}
+          - {name: TYPE,   bits: "3:1",  desc: "0=translation, 1=perm, 2=walk_err"}
+          - {name: CLIENT, bits: "7:4",  desc: "Client ID: 0=VF, 1=TMU, 2=L2, 3=CP"}
+
+  # ----------------------------------------------------------------------------
+  # FBO_CFG — Framebuffer + MSAA configuration
+  # ----------------------------------------------------------------------------
+  - name: FBO
+    base: 0x00002000
+    size: 0x00001000
+    description: Framebuffer + MSAA config
+    registers:
+      - name: FBO_CTRL
+        offset: 0x000
+        access: RW
+        fields:
+          - {name: MSAA_EN,     bits: "0",   desc: "1 = 4x MSAA; 0 = 1x"}
+          - {name: A2C_EN,      bits: "1",   desc: "Alpha-to-coverage"}
+          - {name: RESOLVE_MODE,bits: "3:2", desc: "0=implicit, 1=explicit_blit, 2=none"}
+      - name: FBO_COLOR_BASE
+        offset: 0x004
+        access: RW
+        fields:
+          - {name: ADDR, bits: "31:0", desc: "Color buffer addr (post-resolve)"}
+      - name: FBO_DEPTH_BASE
+        offset: 0x008
+        access: RW
+      - name: FBO_WIDTH
+        offset: 0x00C
+        access: RW
+        fields:
+          - {name: W, bits: "13:0", desc: "Width in pixel (max 4096 for v1)"}
+      - name: FBO_HEIGHT
+        offset: 0x010
+        access: RW
+        fields:
+          - {name: H, bits: "13:0", desc: "Height in pixel"}
+
+  # ----------------------------------------------------------------------------
+  # TBF — Tile Buffer config
+  # ----------------------------------------------------------------------------
+  - name: TBF
+    base: 0x00003000
+    size: 0x00001000
+    description: Tile buffer configuration
+    registers:
+      - name: TBF_CTRL
+        offset: 0x000
+        access: RW
+        fields:
+          - {name: BANK_CFG, bits: "2:0", desc: "Bank config (TBD Phase 2)"}
+          - {name: BIST_START, bits: "8", desc: "Write 1 = run BIST"}
+      - name: TBF_STATUS
+        offset: 0x004
+        access: RO
+        fields:
+          - {name: BIST_DONE, bits: "0"}
+          - {name: BIST_FAIL, bits: "1"}
+
+  # ----------------------------------------------------------------------------
+  # SHADER — Shader core config (binding, scratch)
+  # ----------------------------------------------------------------------------
+  - name: SHADER
+    base: 0x00004000
+    size: 0x00001000
+    description: Shader core configuration
+    registers:
+      - name: SHADER_VS_BASE
+        offset: 0x000
+        access: RW
+        fields:
+          - {name: ADDR, bits: "31:0", desc: "VS binary addr"}
+      - name: SHADER_FS_BASE
+        offset: 0x004
+        access: RW
+      - name: SHADER_SCRATCH_BASE
+        offset: 0x008
+        access: RW
+      - name: SHADER_SCRATCH_SIZE
+        offset: 0x00C
+        access: RW
+      - name: SHADER_UBO_BASE
+        offset: 0x010
+        access: RW
+
+  # ----------------------------------------------------------------------------
+  # TEX — Texture binding table (16 slots)
+  # ----------------------------------------------------------------------------
+  - name: TEX
+    base: 0x00005000
+    size: 0x00001000
+    description: Texture binding slot table (16 slots x 16 B)
+    registers:
+      # Slot 0 example; slots 1-15 mirror layout at offset += 0x10
+      - name: TEX0_BASE
+        offset: 0x000
+        access: RW
+        fields:
+          - {name: ADDR, bits: "31:0", desc: "Texture base phys addr"}
+      - name: TEX0_CFG
+        offset: 0x004
+        access: RW
+        fields:
+          - {name: FORMAT,     bits: "3:0",  desc: "0=RGBA8, 1=RGB565, 2=ETC1"}
+          - {name: WRAP_S,     bits: "5:4",  desc: "0=clamp, 1=repeat, 2=mirror"}
+          - {name: WRAP_T,     bits: "7:6"}
+          - {name: FILTER_MIN, bits: "10:8"}
+          - {name: FILTER_MAG, bits: "12:11"}
+          - {name: MIP_ENABLE, bits: "13"}
+      - name: TEX0_DIM
+        offset: 0x008
+        access: RW
+        fields:
+          - {name: WIDTH,  bits: "13:0"}
+          - {name: HEIGHT, bits: "29:16"}
+      - name: TEX0_MIP
+        offset: 0x00C
+        access: RW
+        fields:
+          - {name: LOG2_LEVELS, bits: "3:0"}
+      # TEX1..TEX15 generated by tool (mirror layout)
+
+  # ----------------------------------------------------------------------------
+  # PMU — Performance Counters
+  # ----------------------------------------------------------------------------
+  - name: PMU
+    base: 0x00010000
+    size: 0x00010000
+    description: Performance counters + trace
+    registers:
+      - name: PMU_CTRL
+        offset: 0x000
+        access: RW
+        fields:
+          - {name: ENABLE, bits: "0"}
+          - {name: RESET,  bits: "1", desc: "Clear all counters"}
+      # 64 x 32-bit counters at offset 0x100 onward
+      # Event selection at offset 0x200 onward (64 x 32-bit mux)
+      # MSAA-specific counters:
+      #   COVERAGE_HIST_0..4 — population count histogram
+      #   RESOLVE_CYCLE
+      #   TBF_SPILL
+      #   A2C_HIT
+      #   EARLY_Z_PER_SAMPLE_KILL
+      # 完整列表 tool 自動展開
+
+# ------------------------------------------------------------------------------
+# Notes
+# ------------------------------------------------------------------------------
+# - 本 YAML 為 Phase 0 skeleton,Phase 0 exit 前展開所有 bank 完整 field。
+# - TEX / PMU 重複性 register 由 tool macro 展開,不手寫。
+# - RW1C = write 1 to clear; RO = read-only; RW = read-write。
+# - Reset value 若未列出 = 0。

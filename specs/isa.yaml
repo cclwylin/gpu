@@ -1,0 +1,151 @@
+# ------------------------------------------------------------------------------
+# Shader ISA — machine-readable definition
+# ------------------------------------------------------------------------------
+# Consumed by tools/isa_gen/ to generate:
+#   - Assembler   (compiler/assembler/gen/)
+#   - Disassembler
+#   - ISA simulator skeleton
+#   - Decoder RTL (rtl/blocks/sc/gen/)
+# ------------------------------------------------------------------------------
+
+version: 0.1
+status: draft
+last_updated: 2026-04-25
+
+# Global ISA parameters
+params:
+  instruction_width: 32
+  warp_size: 16
+  lane_count: 4
+  gpr_count: 32
+  const_count: 16
+  varying_count: 8
+  output_count: 4
+  loop_stack_depth: 8
+  tex_binding_count: 16
+
+# Register classes
+registers:
+  - {class: gpr,     count: 32, width: 128, scope: per_thread, prefix: r}
+  - {class: const,   count: 16, width: 128, scope: per_warp,   prefix: c}
+  - {class: varying, count: 8,  width: 128, scope: per_thread, prefix: v}
+  - {class: output,  count: 4,  width: 128, scope: per_thread, prefix: o}
+  - {class: predicate, count: 1, width: 16, scope: per_warp,   prefix: p}
+
+# Floating point behavior
+fp:
+  format: binary32
+  subnormal: flush_to_zero
+  rounding: round_to_nearest_even
+  nan_propagate: true
+  transcendental_ulp_tolerance: 3
+
+# Instruction formats
+formats:
+  alu:
+    layout:
+      - {field: opcode, bits: "31:26"}
+      - {field: sat,    bits: "25"}
+      - {field: pred,   bits: "24"}
+      - {field: dst,    bits: "23:19"}
+      - {field: wmask,  bits: "18:15"}     # xyzw write mask
+      - {field: src0,   bits: "14:9"}      # 5-bit reg + 1-bit class
+      - {field: sw0,    bits: "8:7"}
+      - {field: src1,   bits: "6:1"}
+      - {field: sw1_lo, bits: "0"}         # 2-bit swizzle,第 2 bit 借 i-field 第 0 bit
+      # NOTE: 3-op instructions (mad/cmp) extension encoding TBD Phase 0
+  flow:
+    layout:
+      - {field: opcode, bits: "31:26"}
+      - {field: cond,   bits: "25"}
+      - {field: abs,    bits: "24"}
+      - {field: imm,    bits: "23:0"}
+  mem:
+    layout:
+      - {field: opcode, bits: "31:26"}
+      - {field: wmask,  bits: "25:22"}
+      - {field: dst,    bits: "21:17"}
+      - {field: src,    bits: "16:11"}
+      - {field: tex,    bits: "10:7"}
+      - {field: mode,   bits: "6:4"}
+      - {field: pad,    bits: "3:0"}
+
+# Opcode table
+opcodes:
+  # ---------------- ALU ----------------
+  - {name: nop,  format: alu, opcode: 0b000000, semantics: "no op"}
+  - {name: mov,  format: alu, opcode: 0b000001, semantics: "dst = src0"}
+  - {name: add,  format: alu, opcode: 0b000010, semantics: "dst = src0 + src1"}
+  - {name: mul,  format: alu, opcode: 0b000011, semantics: "dst = src0 * src1"}
+  - {name: mad,  format: alu, opcode: 0b000100, semantics: "dst = src0*src1 + src2", operands: 3}
+  - {name: dp3,  format: alu, opcode: 0b000101, semantics: "dst.xyzw = dot3(src0, src1)"}
+  - {name: dp4,  format: alu, opcode: 0b000110, semantics: "dst.xyzw = dot4(src0, src1)"}
+  - {name: rcp,  format: alu, opcode: 0b000111, semantics: "dst.xyzw = 1/src0.x"}
+  - {name: rsq,  format: alu, opcode: 0b001000, semantics: "dst.xyzw = 1/sqrt(src0.x)"}
+  - {name: exp,  format: alu, opcode: 0b001001, semantics: "dst.xyzw = 2^src0.x"}
+  - {name: log,  format: alu, opcode: 0b001010, semantics: "dst.xyzw = log2(src0.x)"}
+  - {name: sin,  format: alu, opcode: 0b001011, semantics: "dst.xyzw = sin(src0.x)"}
+  - {name: cos,  format: alu, opcode: 0b001100, semantics: "dst.xyzw = cos(src0.x)"}
+  - {name: min,  format: alu, opcode: 0b001101, semantics: "dst = min(src0, src1)"}
+  - {name: max,  format: alu, opcode: 0b001110, semantics: "dst = max(src0, src1)"}
+  - {name: abs,  format: alu, opcode: 0b001111, semantics: "dst = abs(src0)"}
+  - {name: frc,  format: alu, opcode: 0b010000, semantics: "dst = src0 - floor(src0)"}
+  - {name: flr,  format: alu, opcode: 0b010001, semantics: "dst = floor(src0)"}
+  - {name: cmp,  format: alu, opcode: 0b010010, semantics: "dst = src0>=0 ? src1 : src2", operands: 3}
+
+  # ---------------- Flow ----------------
+  - {name: bra,      format: flow, opcode: 0b100000}
+  - {name: call,     format: flow, opcode: 0b100001}
+  - {name: ret,      format: flow, opcode: 0b100010}
+  - {name: loop,     format: flow, opcode: 0b100011}
+  - {name: endloop,  format: flow, opcode: 0b100100}
+  - {name: break,    format: flow, opcode: 0b100101}
+  - {name: kil,      format: flow, opcode: 0b100110, semantics: "discard pixel (FS only)"}
+
+  # ---------------- Memory ----------------
+  - {name: ld, format: mem, opcode: 0b110000, semantics: "dst = mem[src+imm]"}
+  - {name: st, format: mem, opcode: 0b110001, semantics: "mem[src+imm] = dst"}
+
+  # ---------------- Texture ----------------
+  - {name: tex,  format: mem, opcode: 0b110100}
+  - {name: texb, format: mem, opcode: 0b110101}
+  - {name: texl, format: mem, opcode: 0b110110}
+  - {name: texg, format: mem, opcode: 0b110111}
+
+# Swizzle encoding (2-bit)
+swizzle:
+  "00": xyzw
+  "01": xxxx
+  "10": yyyy
+  "11": zzzw     # Phase 0 驗證:此 pattern 是否覆蓋常用 case;或擴充至 4-bit
+# NOTE: 若實證 2-bit 不足,擴充到 4-bit swizzle,ALU 格式需要調整
+
+# Write mask encoding (4-bit)
+write_mask:
+  bit_0: x
+  bit_1: y
+  bit_2: z
+  bit_3: w
+
+# Source modifiers (encoded in reserved bits,Phase 0 敲定)
+modifiers:
+  - {name: abs, desc: "take absolute value of source"}
+  - {name: neg, desc: "negate source"}
+
+# ABI
+abi:
+  varying_mapping:
+    description: VS o1..o7 → FS v0..v6; VS o0 = gl_Position
+  uniform:
+    constant_regs: c0..c15
+    uniform_buffer: DRAM via ld
+  texture_binding:
+    slots: 16
+    config_csr_base: 0x00005000
+  entry:
+    header_fields:
+      - entry_pc
+      - gpr_count
+      - scratch_size
+      - varying_count
+      - uniform_count
