@@ -4,8 +4,9 @@ add_library(gpu_compiler STATIC
     isa_sim/src/sim.cpp
     isa_sim/src/sim_warp.cpp
     glsl/src/glsl.cpp
+    spv/src/spv_to_isa.cpp
 )
-target_include_directories(gpu_compiler PUBLIC include)
+target_include_directories(gpu_compiler PUBLIC include spv/include)
 
 # CLI tools
 add_executable(gpu-as       assembler/asm_main.cpp)
