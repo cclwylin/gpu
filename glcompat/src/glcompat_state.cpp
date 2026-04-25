@@ -450,15 +450,46 @@ void glRasterPos2i(GLint x, GLint y) {
 void glRasterPos2f(GLfloat x, GLfloat y) { glRasterPos2i((GLint)x, (GLint)y); }
 void glRasterPos3f(GLfloat x, GLfloat y, GLfloat) { glRasterPos2i((GLint)x, (GLint)y); }
 
-// glBitmap — when w == h == 0 (the splatlogo idiom), only the raster
-// position movement matters. We don't yet rasterize the bitmap glyph
-// itself; that's Category C (font rendering).
-void glBitmap(GLsizei w, GLsizei h, GLfloat /*xb*/, GLfloat /*yb*/,
-              GLfloat xmove, GLfloat ymove, const GLubyte* /*bits*/) {
+// glBitmap — rasterize a 1-bit-per-pixel mask at the current raster
+// position using `cur_color`. Bits are MSB-first per byte; rows are
+// stored bottom-up per the GL spec, so we flip Y at render. Empty
+// bitmaps (w == h == 0, splatlogo idiom) just advance the raster.
+void glBitmap(GLsizei w, GLsizei h, GLfloat xb, GLfloat yb,
+              GLfloat xmove, GLfloat ymove, const GLubyte* bits) {
     auto& s = state();
+    if (bits && w > 0 && h > 0 && s.raster_valid) {
+        if (!s.ctx_inited) {
+            s.ctx.fb.width  = s.vp_w > 0 ? s.vp_w : 256;
+            s.ctx.fb.height = s.vp_h > 0 ? s.vp_h : 256;
+            s.ctx.fb.color.assign(
+                (size_t)s.ctx.fb.width * s.ctx.fb.height, 0u);
+            s.ctx_inited = true;
+        }
+        const int FB_W = s.ctx.fb.width, FB_H = s.ctx.fb.height;
+        const int row_bytes = (w + 7) / 8;
+        const int x0 = (int)(s.raster_pos[0] - xb);
+        const int y0 = (int)(s.raster_pos[1] - yb);
+        auto pack = [](float f) {
+            return (uint32_t)((f < 0 ? 0 : f > 1 ? 1 : f) * 255 + 0.5f) & 0xFF;
+        };
+        const auto& cc = s.cur_color;
+        const uint32_t pix = (pack(cc[3]) << 24) | (pack(cc[2]) << 16)
+                           | (pack(cc[1]) <<  8) |  pack(cc[0]);
+        for (int row = 0; row < h; ++row) {
+            // glBitmap rows are bottom-up.
+            const GLubyte* src = bits + (size_t)(h - 1 - row) * row_bytes;
+            const int fy = y0 - row;       // raster pos is at bottom-left
+            if (fy < 0 || fy >= FB_H) continue;
+            for (int col = 0; col < w; ++col) {
+                if (!(src[col >> 3] & (0x80 >> (col & 7)))) continue;
+                const int fx = x0 + col;
+                if (fx < 0 || fx >= FB_W) continue;
+                s.ctx.fb.color[(size_t)fy * FB_W + fx] = pix;
+            }
+        }
+    }
     s.raster_pos[0] += xmove;
     s.raster_pos[1] += ymove;
-    (void)w; (void)h;
 }
 void glIndexi(GLint)                      {}
 void glIndexf(GLfloat)                    {}
@@ -482,22 +513,7 @@ void glTexEnvi(GLenum, GLenum, GLint)     {}
 void glTexEnvfv(GLenum, GLenum, const GLfloat*) {}
 void glGetTexLevelParameteriv(GLenum, GLint, GLenum, GLint* p) { if (p) *p = 0; }
 
-// Eval / map — full stubs.
-void glMap1d(GLenum, GLdouble, GLdouble, GLint, GLint, const GLdouble*) {}
-void glMap1f(GLenum, GLfloat,  GLfloat,  GLint, GLint, const GLfloat*)  {}
-void glMap2d(GLenum, GLdouble, GLdouble, GLint, GLint,
-             GLdouble, GLdouble, GLint, GLint, const GLdouble*) {}
-void glMap2f(GLenum, GLfloat,  GLfloat,  GLint, GLint,
-             GLfloat,  GLfloat,  GLint, GLint, const GLfloat*)  {}
-void glMapGrid1d(GLint, GLdouble, GLdouble) {}
-void glMapGrid2d(GLint, GLdouble, GLdouble, GLint, GLdouble, GLdouble) {}
-void glMapGrid2f(GLint, GLfloat,  GLfloat,  GLint, GLfloat,  GLfloat)  {}
-void glEvalCoord1d(GLdouble) {}
-void glEvalCoord2d(GLdouble, GLdouble) {}
-void glEvalMesh1(GLenum, GLint, GLint) {}
-void glEvalMesh2(GLenum, GLint, GLint, GLint, GLint) {}
-void glEvalPoint1(GLint) {}
-void glEvalPoint2(GLint, GLint) {}
+// Eval / map are now implemented in glcompat_eval.cpp.
 void glPixelZoom(GLfloat x, GLfloat y) {
     state().pixel_zoom_x = x;
     state().pixel_zoom_y = y;

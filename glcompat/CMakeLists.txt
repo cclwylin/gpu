@@ -10,6 +10,8 @@ add_library(gpu_glcompat STATIC
     src/glcompat_glu.cpp
     src/glcompat_glut.cpp
     src/glcompat_glut_geom.cpp
+    src/glcompat_font_bitmap.cpp
+    src/glcompat_eval.cpp
 )
 target_include_directories(gpu_glcompat PUBLIC include)
 target_link_libraries(gpu_glcompat PUBLIC gpu_sw_ref gpu_compiler)

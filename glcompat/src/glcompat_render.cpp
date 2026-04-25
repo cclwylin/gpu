@@ -152,10 +152,74 @@ std::vector<std::array<int, 3>> triangulate(GLenum prim, int n) {
                 tris.push_back({i, i+3, i+2});
             }
             break;
+        // Lines, line strips, line loops — rendered as 1-pixel-wide
+        // axis-aligned quads. Not real anti-aliased GL_LINE_SMOOTH;
+        // good enough for stroke fonts and outline tests.
+        case GL_LINES:
+        case GL_LINE_STRIP:
+        case GL_LINE_LOOP:
+            // Caller handles line→quad expansion before triangulate;
+            // see flush_immediate.
+            break;
         default:
             break;
     }
     return tris;
+}
+
+// Expand a line primitive into a triangle list of thin quads. Each
+// segment becomes a 1.5-pixel-wide screen-space ribbon. Operates on
+// `lit` (clip space) → returns added clip-space verts + per-vert color
+// + new triangle indices.
+struct LineExpansion {
+    std::vector<Vec4>            extra_clip;
+    std::vector<Vec4>            extra_color;
+    std::vector<std::array<int, 3>> tris;
+};
+
+LineExpansion expand_lines(GLenum prim, const std::vector<Vec4>& clip,
+                           const std::vector<Vec4>& color,
+                           int W, int H) {
+    LineExpansion x;
+    auto add_seg = [&](int ia, int ib) {
+        // Project to screen-space to compute a perpendicular offset.
+        const Vec4& a = clip[ia]; const Vec4& b = clip[ib];
+        const float aw = a[3] != 0 ? a[3] : 1, bw = b[3] != 0 ? b[3] : 1;
+        const float ax = (a[0]/aw * 0.5f + 0.5f) * W;
+        const float ay = (a[1]/aw * 0.5f + 0.5f) * H;
+        const float bx = (b[0]/bw * 0.5f + 0.5f) * W;
+        const float by = (b[1]/bw * 0.5f + 0.5f) * H;
+        float dx = bx - ax, dy = by - ay;
+        const float len = std::sqrt(dx*dx + dy*dy);
+        if (len < 1e-3f) return;
+        // Perpendicular, in pixels → back to NDC offset.
+        const float halfw_px = 0.75f;
+        const float px = -dy / len * halfw_px, py = dx / len * halfw_px;
+        const float ndx = px / W * 2.0f, ndy = py / H * 2.0f;
+        // Generate 4 verts (a-d, a+d, b+d, b-d) preserving w.
+        auto v = [&](const Vec4& p, float ox, float oy) {
+            const float w = p[3] != 0 ? p[3] : 1;
+            Vec4 r = {{p[0] + ox * w, p[1] + oy * w, p[2], p[3]}};
+            return r;
+        };
+        const int base = (int)x.extra_clip.size();
+        x.extra_clip.push_back(v(a, -ndx, -ndy)); x.extra_color.push_back(color[ia]);
+        x.extra_clip.push_back(v(a,  ndx,  ndy)); x.extra_color.push_back(color[ia]);
+        x.extra_clip.push_back(v(b,  ndx,  ndy)); x.extra_color.push_back(color[ib]);
+        x.extra_clip.push_back(v(b, -ndx, -ndy)); x.extra_color.push_back(color[ib]);
+        x.tris.push_back({base, base+1, base+2});
+        x.tris.push_back({base, base+2, base+3});
+    };
+    const int n = (int)clip.size();
+    if (prim == GL_LINES) {
+        for (int i = 0; i + 1 < n; i += 2) add_seg(i, i + 1);
+    } else if (prim == GL_LINE_STRIP) {
+        for (int i = 0; i + 1 < n; ++i) add_seg(i, i + 1);
+    } else if (prim == GL_LINE_LOOP && n >= 2) {
+        for (int i = 0; i + 1 < n; ++i) add_seg(i, i + 1);
+        add_seg(n - 1, 0);
+    }
+    return x;
 }
 
 // Cache a passthrough VS+FS pair compiled from inline assembly.
@@ -218,8 +282,23 @@ void flush_immediate() {
         lit.push_back(lv);
     }
 
-    // Triangulate and render.
-    const auto tris = triangulate(s.prim, (int)lit.size());
+    // Triangulate. For LINES/LINE_STRIP/LINE_LOOP, expand each segment
+    // into a thin quad first.
+    std::vector<std::array<int, 3>> tris;
+    if (s.prim == GL_LINES || s.prim == GL_LINE_STRIP ||
+        s.prim == GL_LINE_LOOP) {
+        std::vector<Vec4> clip_v, col_v;
+        clip_v.reserve(lit.size()); col_v.reserve(lit.size());
+        for (const auto& lv : lit) { clip_v.push_back(lv.clip); col_v.push_back(lv.color); }
+        auto x = expand_lines(s.prim, clip_v, col_v,
+                              s.ctx.fb.width, s.ctx.fb.height);
+        // Append to lit so subsequent draw uses them.
+        for (size_t i = 0; i < x.extra_clip.size(); ++i)
+            lit.push_back({x.extra_clip[i], x.extra_color[i]});
+        tris = std::move(x.tris);
+    } else {
+        tris = triangulate(s.prim, (int)lit.size());
+    }
     if (tris.empty()) return;
 
     // Build per-triangle vertex attribute stream for sw_ref.

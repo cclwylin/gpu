@@ -319,7 +319,7 @@ void glEvalMesh1(GLenum, GLint, GLint);
 void glEvalMesh2(GLenum, GLint, GLint, GLint, GLint);
 void glEvalPoint1(GLint i);
 void glEvalPoint2(GLint i, GLint j);
-#define GL_MAP1_VERTEX_3       0x0D90
+#define GL_MAP1_VERTEX_3       0x0D97
 #define GL_MAP2_VERTEX_3       0x0DB7
 #define GL_AUTO_NORMAL_CAP     GL_AUTO_NORMAL
 
@@ -467,7 +467,7 @@ void glPolygonOffset(GLfloat factor, GLfloat units);
 #define GL_GREEN_SCALE           0x0D18
 #define GL_BLUE_SCALE            0x0D1A
 #define GL_ALPHA_SCALE           0x0D1C
-#define GL_MAP1_VERTEX_4         0x0D91
+#define GL_MAP1_VERTEX_4         0x0D98
 #define GL_MAP2_VERTEX_4         0x0DB8
 #define GL_COLOR_INDEXES         0x1603
 #define GL_COLOR_CLEAR_VALUE     0x0C22

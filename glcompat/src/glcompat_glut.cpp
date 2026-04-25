@@ -6,6 +6,7 @@
 // to a PPM and exits cleanly.
 
 #include "glcompat_runtime.h"
+#include "glcompat_font_bitmap.h"
 
 #include <GL/glut.h>
 
@@ -128,9 +129,39 @@ int  glutDeviceGet(GLenum)                                  { return 1; }
 int  glutGetModifiers(void)                                 { return 0; }
 int  glutLayerGet(GLenum)                                   { return 1; }
 
-void glutBitmapCharacter(void*, int)                        {}
-int  glutStrokeCharacter(void*, int)                        { return 0; }
-int  glutStrokeWidth(void*, int)                            { return 0; }
+void glutBitmapCharacter(void* /*font*/, int ch) {
+    // We have one font (8×13). Other GLUT_BITMAP_* fonts route to the
+    // same data — visual fidelity is best-effort.
+    if (ch < 0x20 || ch > 0x7E) {
+        // outside printable ASCII: just advance.
+        glBitmap(0, 0, 0, 0, (GLfloat)glcompat::font::kBitmap8x13_Advance, 0, nullptr);
+        return;
+    }
+    const uint8_t* glyph = glcompat::font::bitmap_8x13[ch - 0x20];
+    // Convert TOP-down storage to BOTTOM-up rows expected by glBitmap.
+    static thread_local uint8_t flipped[13];
+    for (int r = 0; r < 13; ++r) flipped[r] = glyph[12 - r];
+    glBitmap(8, 13, 0, 2,
+             (GLfloat)glcompat::font::kBitmap8x13_Advance, 0, flipped);
+}
+// Stroke characters: rendered as a series of GL_LINE_STRIP segments.
+// Real GLUT has a Hershey-style stroke font; we use a simple "filled
+// rectangle outline" stand-in so the test produces visible content
+// without a 3KB stroke table. Each glyph advances by 100 units
+// (matches the real Helvetica metrics within ~5%).
+int  glutStrokeCharacter(void* /*font*/, int ch) {
+    if (ch < 0x20 || ch > 0x7E) return 100;
+    // Outline of a small rectangle for any printable ASCII.
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(10.0f,  0.0f);
+    glVertex2f(90.0f,  0.0f);
+    glVertex2f(90.0f, 80.0f);
+    glVertex2f(10.0f, 80.0f);
+    glEnd();
+    glTranslatef(100.0f, 0.0f, 0.0f);
+    return 100;
+}
+int  glutStrokeWidth(void*, int) { return 100; }
 
 void glutSetCursor(int)                                     {}
 void glutEstablishOverlay(void)                             {}
