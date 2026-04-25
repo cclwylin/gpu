@@ -1,7 +1,7 @@
 ---
 doc: Progress Log
 purpose: Human-readable index of what shipped per commit, mapped to Master Plan milestones.
-last_updated: 2026-04-25 (Sprint 7)
+last_updated: 2026-04-25 (Sprint 12)
 ---
 
 # PROGRESS.md
@@ -39,19 +39,26 @@ itself — `git show <sha>`.
 | 10 | `ce433ca` | Phase 1 / Sprint 5 | systemc: TLM-LT skeleton (CP → SC wrapping ISA sim) |
 | 11 | `aa461f2` | Phase 1 / Sprint 6 | sim: 16-thread warp executor with per-lane mask + divergence |
 | 12 | `3360510` | Phase 1 / docs | add PROGRESS.md (plan-vs-actual log) |
-| 13 | `47c652c` | Phase 1 / Sprint 7 | ISA v1.1 — MEM dst_class+src_class, per-lane break |
+| 13 | `47c652c` | Phase 1 / Sprint 7  | ISA v1.1 — MEM dst_class+src_class, per-lane break |
+| 14 | `95da73b` | Phase 1 / Sprint 8  | sw_ref: PFO depth test + alpha blend |
+| 15 | `ce94abb` | Phase 1 / Sprint 9  | compiler/glsl: locals + built-ins + if/else |
+| 16 | `a5e73ef` | Phase 1 / Sprint 10 | systemc: VF + PA blocks, CP→VF→SC chain |
+| 17 | `7f52a4c` | Phase 1 / Sprint 11 | conformance harness — scene-based CTest regression |
+| 18 | `968736f` | Phase 1 / Sprint 12 | glslang integration (gated; SPIR-V emit) |
 
 ---
 
 ## Status snapshot
 
 - **Master Plan phase**: Phase 1 (Three-Track Parallel)
-- **Tests passing**: 10/10 (CTest, local macOS / GCC-15)
-  - `compiler.{asm_roundtrip, sim_basic, glsl_compile, sim_warp, warp_break}`
-  - `sw_ref.{basic, fp, isa_triangle, msaa, texture}`
-  - `systemc.tlm_hello` skipped on macOS (libc++/libstdc++ ABI), runs in Docker
-- **ISA**: v1.1 frozen (MEM class bits + per-lane break formalised);
-  prior v1.0 gaps closed
+- **Tests passing**: 14/14 (CTest, local macOS / GCC-15)
+  - `compiler.{asm_roundtrip, sim_basic, glsl_compile, sim_warp, warp_break, glsl_ext}`
+  - `sw_ref.{basic, fp, isa_triangle, msaa, texture, pfo}`
+  - `conformance.{triangle_white, triangle_msaa}`
+  - Skipped (Docker-only): `systemc.tlm_hello`, `compiler.glsl_to_spv`
+- **ISA**: v1.1 frozen (MEM class bits + per-lane break formalised)
+- **Optional gates**: `-DGPU_BUILD_SYSTEMC=ON` (TLM CP→VF→SC + PA),
+  `-DGPU_BUILD_GLSLANG=ON` (FetchContent glslang, GLSL → SPIR-V CLI)
 - **Repo**: https://github.com/cclwylin/gpu (SSH origin)
 
 ---
@@ -258,3 +265,81 @@ finishing one track first.
 
 **Closed by Sprint 7**:
 - ~~ISA v1.1: MEM `dst_class` + `src_class`; per-lane `break` semantics~~
+
+**Closed by Sprints 8–12**:
+- ~~PFO depth/stencil/blend~~ (depth + blend done Sprint 8; stencil still TODO)
+- ~~More TLM blocks: VF + PA~~ (RS/TMU/PFO/TBF/RSV/MMU/L2/MC/CSR/PMU still TODO)
+- ~~GLSL frontend ext: dot/normalize/max/min/clamp/pow + if/else + locals~~
+  (vector ctors, for/while, reflect/length/abs still TODO)
+- ~~Conformance harness~~ (scene format simple, scene-level shader binding TODO)
+- ~~glslang integration~~ (SPIR-V emit done; SPIR-V → IR lowering still TODO)
+
+---
+
+## Sprint 8 — PFO depth test + alpha blend(`95da73b`)
+- **Done**:
+  - Framebuffer.depth (1× path); DrawState gains depth_func / depth_write +
+    blend_enable / blend_src / blend_dst / blend_eq.
+  - PFO rewritten: per-pixel (1×) and per-sample (4×) depth test +
+    SRC_ALPHA-style blend.
+- **Tests**: 12/12 — `sw_ref.pfo` adds depth-overlap correctness check
+  and an alpha-blend midpoint check.
+- **Out of scope**: stencil ops; depth bounds; scissor.
+
+## Sprint 9 — GLSL frontend ext(`ce94abb`)
+- **Done**:
+  - Number literal lexing fix (`.x` no longer consumed as NUMBER).
+  - Compiler-managed constant pool for float literals (top of c-bank).
+  - `float / vec{2,3,4}` local declarations + initialiser.
+  - Built-ins: `dot`, `normalize`, `max`, `min`, `clamp`, `pow`.
+  - Comparison ops `< <= > >= == !=` recognised in if-condition.
+  - `if (a OP b) { ... } [else { ... }]` lowers to setp + if_p/else/endif.
+  - Stmt redesigned as `variant<AssignStmt, LocalDeclStmt, IfStmt>`.
+- **Tests**: 13/13 — `compiler.glsl_ext` runs a Phong-ish shader through
+  ISA sim.
+- **Out of scope**: `for`/`while`, vector constructors, `reflect`,
+  `length`, `abs`.
+
+## Sprint 10 — TLM blocks: VF + PA(`a5e73ef`)
+- **Done**:
+  - `VertexFetch` (TLM target+initiator) and `PrimitiveAssembly` (TLM
+    target).
+  - CP made generic (`enqueue(void*)`); existing `ShaderJob*` direct
+    submission replaced by VF-driven `VertexFetchJob*`.
+  - Top wires `cp.initiator -> vf.target`, `vf.initiator -> sc.target`.
+    PA is a sibling target driven by tb.
+  - Testbench `systemc.tlm_hello` rewritten to drive 3 vertices through
+    the CP→VF→SC chain plus a direct PA call.
+- **Tests**: 12/12 non-SystemC + library compiles. SystemC test runs in
+  Docker only (existing macOS skip rule unchanged).
+- **Out of scope**: RS, TMU, PFO, TBF, RSV, MMU, L2, MC, CSR, PMU as
+  TLM blocks.
+
+## Sprint 11 — Conformance harness(`7f52a4c`)
+- **Done**:
+  - `tests/scenes/*.scene` declarative format (line-oriented key=value).
+  - `tests/conformance/scene_runner` CLI: parse + run sw_ref + assert
+    pixel-count expectations.
+  - CMake globs `tests/scenes/*.scene` and adds one CTest per file.
+  - Two reference scenes: `triangle_white` (1×) and `triangle_msaa`
+    (4× edge-pixel sentinel).
+- **Tests**: 14/14 with two new `conformance.*`.
+- **Out of scope**: scene-level shader binding (currently uses fixed
+  pass-through VS+FS); golden-image diff (currently only pixel counts).
+
+## Sprint 12 — glslang integration(`968736f`)
+- **Done**:
+  - `compiler/glslang/` subproject gated by `-DGPU_BUILD_GLSLANG=ON`
+    (default OFF). FetchContent pulls glslang 14.0.0 (matches
+    `third_party/versions.yaml`).
+  - Wrapper API `gpu::glslang_fe::compile(glsl, stage) -> SpvResult`
+    around `glslang::TShader` / `TProgram` / `GlslangToSpv`.
+  - CLI `gpu-glsl-to-spv {-vs|-fs} input.glsl output.spv`.
+  - Test `compiler.glsl_to_spv` (Docker only) compiles a 4-line FS and
+    asserts the SPIR-V magic word.
+- **Why gated**: cold-fetching + building glslang is ~10 min; not worth
+  every local rebuild. Docker / CI image absorbs the cost once.
+- **Out of scope (next sprint)**: SPIR-V → our IR lowering pass. The
+  full GLSL → ISA replacement happens when that pass is in place; the
+  current hand-written parser in `compiler/glsl/` keeps working until
+  then.
