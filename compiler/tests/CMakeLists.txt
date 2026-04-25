@@ -9,3 +9,7 @@ add_test(NAME compiler.sim_basic COMMAND test_sim_basic)
 add_executable(test_glsl_compile test_glsl_compile.cpp)
 target_link_libraries(test_glsl_compile PRIVATE gpu_compiler)
 add_test(NAME compiler.glsl_compile COMMAND test_glsl_compile)
+
+add_executable(test_sim_warp test_sim_warp.cpp)
+target_link_libraries(test_sim_warp PRIVATE gpu_compiler)
+add_test(NAME compiler.sim_warp COMMAND test_sim_warp)

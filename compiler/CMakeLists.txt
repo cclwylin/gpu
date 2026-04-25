@@ -2,6 +2,7 @@ add_library(gpu_compiler STATIC
     assembler/src/asm.cpp
     assembler/src/disasm.cpp
     isa_sim/src/sim.cpp
+    isa_sim/src/sim_warp.cpp
     glsl/src/glsl.cpp
 )
 target_include_directories(gpu_compiler PUBLIC include)

@@ -47,4 +47,21 @@ ExecResult execute(const std::vector<isa::Inst>& code,
                    ThreadState& t,
                    TexSampler tex = nullptr);
 
+// -----------------------------------------------------------------------------
+// 16-thread warp model (Sprint 6).
+// -----------------------------------------------------------------------------
+constexpr int kWarpSize = 16;
+
+struct WarpState {
+    // Per-lane state (one ThreadState per lane). c[] is also per-lane in this
+    // skeleton — Phase 1 will collapse to warp-shared after we model true SIMT.
+    std::array<ThreadState, kWarpSize> lane{};
+    // 16-bit predicate (one bit per lane).
+    uint16_t predicate = 0;
+};
+
+ExecResult execute_warp(const std::vector<isa::Inst>& code,
+                        WarpState& w,
+                        TexSampler tex = nullptr);
+
 }  // namespace gpu::sim
