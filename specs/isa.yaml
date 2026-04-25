@@ -16,9 +16,17 @@
 #   - New opcodes: dp2, setp_eq/ne/lt/le/gt/ge
 # ------------------------------------------------------------------------------
 
-version: "1.0"
+version: "1.1"
 status: frozen
 last_updated: 2026-04-25
+# v1.1 changes vs v1.0 (Sprint 7):
+#   - MEM format: add dst_class (1 bit) + src_class (2 bits) by stealing 3
+#     bits from the 27-bit imm (now 24-bit). Removes the
+#     "mov rN, vN; tex; mov oN, rN" workaround used by Sprint 4.
+#   - Per-lane `break` semantics formalised: a breaking lane clears its
+#     own bit from the live active mask; the loop continues for unbroken
+#     lanes; loop exits naturally when all in-loop lanes have broken or
+#     the count reaches 0.
 
 # Global ISA parameters
 params:
@@ -97,7 +105,7 @@ formats:
       - {field: abs,       bits: "55",    desc: "Absolute target (1) vs PC-relative (0)"}
       - {field: imm,       bits: "54:0",  desc: "Signed immediate (target / count)"}
 
-  # Memory + Texture: 64-bit
+  # Memory + Texture: 64-bit  (v1.1: + dst_class, + src_class)
   mem:
     bit_width: 64
     layout:
@@ -105,11 +113,13 @@ formats:
       - {field: pmd,       bits: "57:56"}
       - {field: dst,       bits: "55:51"}
       - {field: wmask,     bits: "50:47"}
-      - {field: src,       bits: "46:42",  desc: "GPR providing addr / uv"}
+      - {field: src,       bits: "46:42",  desc: "Source register index"}
       - {field: src_swiz,  bits: "41:34",  desc: "8-bit swizzle on src"}
-      - {field: tex,       bits: "33:30",  desc: "Texture binding slot (mem ops use as scratch tag)"}
+      - {field: tex,       bits: "33:30",  desc: "Texture binding slot (ld/st: scratch tag)"}
       - {field: mode,      bits: "29:27",  desc: "0=plain,1=bias,2=lod,3=grad; mem: 0=ld 1=st"}
-      - {field: imm,       bits: "26:0",   desc: "Signed offset immediate"}
+      - {field: dst_class, bits: "26",     desc: "0=GPR (dst[4:0]=r0..r31), 1=output (dst[1:0]=o0..o3)"}
+      - {field: src_class, bits: "25:24",  desc: "00=GPR, 01=const, 10=varying"}
+      - {field: imm,       bits: "23:0",   desc: "Signed offset immediate (24-bit, was 27-bit in v1.0)"}
 
 # ------------------------------------------------------------------------------
 # Swizzle encoding (per-component 2-bit selector, 8 bits total)

@@ -1,7 +1,7 @@
 ---
 doc: Progress Log
 purpose: Human-readable index of what shipped per commit, mapped to Master Plan milestones.
-last_updated: 2026-04-25
+last_updated: 2026-04-25 (Sprint 7)
 ---
 
 # PROGRESS.md
@@ -38,17 +38,20 @@ itself — `git show <sha>`.
 | 9 | `baacb78` | Phase 1 / Sprint 4 | sw_ref: TMU + bilinear texture sampling |
 | 10 | `ce433ca` | Phase 1 / Sprint 5 | systemc: TLM-LT skeleton (CP → SC wrapping ISA sim) |
 | 11 | `aa461f2` | Phase 1 / Sprint 6 | sim: 16-thread warp executor with per-lane mask + divergence |
+| 12 | `3360510` | Phase 1 / docs | add PROGRESS.md (plan-vs-actual log) |
+| 13 | `47c652c` | Phase 1 / Sprint 7 | ISA v1.1 — MEM dst_class+src_class, per-lane break |
 
 ---
 
 ## Status snapshot
 
 - **Master Plan phase**: Phase 1 (Three-Track Parallel)
-- **Tests passing**: 9/9 (CTest, local macOS / GCC-15)
-  - `compiler.{asm_roundtrip, sim_basic, glsl_compile, sim_warp}`
+- **Tests passing**: 10/10 (CTest, local macOS / GCC-15)
+  - `compiler.{asm_roundtrip, sim_basic, glsl_compile, sim_warp, warp_break}`
   - `sw_ref.{basic, fp, isa_triangle, msaa, texture}`
   - `systemc.tlm_hello` skipped on macOS (libc++/libstdc++ ABI), runs in Docker
-- **ISA**: v1.0 frozen; 2 known gaps tracked (MEM dst/src class bits)
+- **ISA**: v1.1 frozen (MEM class bits + per-lane break formalised);
+  prior v1.0 gaps closed
 - **Repo**: https://github.com/cclwylin/gpu (SSH origin)
 
 ---
@@ -209,7 +212,35 @@ finishing one track first.
   else (blue) verifies per-lane outputs.
 - **Known gap**: `break` is currently a "warp-uniform" early exit
   (if any predicated lane wants to break, the whole warp exits). True
-  per-lane break with reconvergence is Phase 1.x.
+  per-lane break with reconvergence is Phase 1.x. — **closed in Sprint 7.**
+- **Next**: ISA v1.1 to close MEM class-bit gap and break gap.
+
+### Sprint 7 — ISA v1.1: MEM class bits + per-lane break(`47c652c`)
+- **Done**:
+  - `MemFields` gains `dst_class` (1 bit) and `src_class` (2 bits),
+    stolen from `imm` (now 24-bit signed). Encoder/decoder updated;
+    assembler/disassembler now emit/parse class-aware operands;
+    `sim.cpp` and `sim_warp.cpp` `tex` paths use the new fields.
+  - `sim_warp.cpp` `loop_stack` frame now stores `entry_active`. `break`
+    is per-lane: clears the affected bits from the live `active` mask;
+    only when `active == 0` does it skip past `endloop` and pop the
+    frame (restoring `entry_active`). `endloop` likewise restores on
+    natural exit.
+  - `specs/isa.yaml` v1.0 → v1.1 + MEM layout fields documented;
+    `docs/isa_spec.md` v1.0 → v1.1 changelog entry; old "known gap"
+    paragraph removed.
+  - `tests/shader_corpus` and existing `.asm` are unchanged because
+    they didn't rely on the workaround; the v1.1 encoding is a
+    superset (still 64-bit, same bit positions for shared fields).
+- **Tests**: 10/10 green
+  - `sw_ref.texture` FS collapsed from 3 instructions to one
+    `tex o0, v0.xy, tex0` (no more `mov rN, vN` / `mov oN, rN`),
+    same RGB quartering result.
+  - new `compiler.warp_break`: 16 lanes with three thresholds
+    (3 / 5 / 999); each lane's recorded iteration count matches
+    its threshold, exercising real per-lane reconvergence.
+- **Known gaps**: none for this slice. Larger gaps remain in the
+  follow-up list.
 - **Next**: TBD — see candidates list.
 
 ---
@@ -218,10 +249,12 @@ finishing one track first.
 
 | Topic | Notes |
 |---|---|
-| **ISA v1.1** | Steal 2 bits from MEM `imm` for `dst_class` + `src_class`; remove the `mov rN, vN; tex; mov oN, rN` workaround. Also fix per-lane `break` semantics. |
 | **PFO depth/stencil/blend** | Currently PFO writes color directly. ES 2.0 needs depth test, stencil ops, blend equations. |
 | **More TLM blocks** | Only CP + SC exist in TLM. Need VF / PA / RS / TMU / PFO / TBF / RSV / MMU / L2 / MC / CSR / PMU. |
 | **GLSL frontend expansion** | Sprint 2 covers ref_shader_1 patterns. ref_shader_2 (Phong) needs `dot`/`normalize`/`pow`/`max`. ref_shader_3 needs `if`/`for`/`discard`. |
 | **Conformance harness** | dEQP / ES 2.0 CTS subset wired to CI. |
 | **glslang integration** | Replace hand-written GLSL parser with glslang → SPIR-V → IR. Architecture already designed for this swap. |
 | **Per-block microarch** | 15 microarch docs are draft v0.1. Will iterate as TLM blocks land. |
+
+**Closed by Sprint 7**:
+- ~~ISA v1.1: MEM `dst_class` + `src_class`; per-lane `break` semantics~~

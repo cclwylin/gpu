@@ -274,12 +274,12 @@ ExecResult execute(const std::vector<Inst>& code, ThreadState& t, TexSampler tex
             if (runs) {
                 if (f.op == 0x34 || f.op == 0x35 || f.op == 0x36 || f.op == 0x37) {
                     if (!tex) { res.ok = false; res.error = "tex op without sampler"; return res; }
-                    Vec4 src_val = swizzle(t.r[f.src], f.src_swiz);
+                    Vec4 src_val = swizzle(read_src(t, f.src_class, f.src), f.src_swiz);
                     Vec4 sample  = tex(f.tex, src_val, f.mode, src_val[3]);
-                    Vec4& dst    = dst_lvalue(t, f.dst, /*dst_class=*/0);
+                    Vec4& dst    = dst_lvalue(t, f.dst, f.dst_class);
                     write_masked(dst, sample, f.wmsk, /*sat=*/false);
                 } else {
-                    // ld/st in Sprint 1: not exercised by ref shaders. No-op safe.
+                    // ld/st: not exercised by ref shaders yet. No-op safe.
                 }
             }
         }

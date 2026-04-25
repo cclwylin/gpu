@@ -172,7 +172,10 @@ ExecResult execute_warp(const std::vector<Inst>& code, WarpState& w, TexSampler 
     std::vector<uint16_t> mask_stack;
     uint16_t active = static_cast<uint16_t>((1u << kWarpSize) - 1u);
 
-    struct Loop { size_t start_pc; int64_t remaining; };
+    // Loop frame holds the active mask at loop entry so endloop / all-lanes-
+    // broken can restore it (per-lane reconvergence: lanes that `break` clear
+    // their bit from the live `active` but the loop continues for others).
+    struct Loop { size_t start_pc; int64_t remaining; uint16_t entry_active; };
     std::vector<Loop> loop_stack;
 
     size_t pc = 0;
@@ -190,24 +193,25 @@ ExecResult execute_warp(const std::vector<Inst>& code, WarpState& w, TexSampler 
             FlowFields f = decode_flow(inst);
 
             switch (f.op) {
-                case 0x23: {  // loop
-                    loop_stack.push_back({pc + 1, f.imm});
+                case 0x23: {  // loop — push frame, capture entry active mask
+                    loop_stack.push_back({pc + 1, f.imm, active});
                     break;
                 }
                 case 0x24: {  // endloop
                     if (!loop_stack.empty()) {
                         auto& L = loop_stack.back();
                         L.remaining -= 1;
-                        if (L.remaining > 0) {
+                        if (L.remaining > 0 && active != 0) {
                             pc = L.start_pc; advance = false;
                         } else {
+                            active = L.entry_active;     // restore on natural exit
                             loop_stack.pop_back();
                         }
                     }
                     break;
                 }
-                case 0x25: {  // break — predicated, drops loop frame
-                    // Compute lane mask for which lanes will break.
+                case 0x25: {  // break — per-lane: clear lanes from live active
+                    if (loop_stack.empty()) break;
                     uint16_t break_mask = 0;
                     for (int lane = 0; lane < kWarpSize; ++lane) {
                         if (!((active >> lane) & 1u)) continue;
@@ -215,10 +219,10 @@ ExecResult execute_warp(const std::vector<Inst>& code, WarpState& w, TexSampler 
                             break_mask |= static_cast<uint16_t>(1u << lane);
                         }
                     }
-                    // Sprint-6 simplification: if any lane breaks, we exit the
-                    // loop for everyone. True per-lane break needs reconverging
-                    // (Phase 1.x). Acceptable when shaders use uniform break.
-                    if (break_mask != 0 && !loop_stack.empty()) {
+                    active = static_cast<uint16_t>(active & ~break_mask);
+                    if (active == 0) {
+                        // All in-loop lanes broke — skip past matching endloop
+                        // and restore the pre-loop active mask.
                         int depth = 1; size_t p = pc + 1;
                         while (p < code.size() && depth > 0) {
                             uint8_t pop = bits(code[p], 63, 58);
@@ -226,6 +230,7 @@ ExecResult execute_warp(const std::vector<Inst>& code, WarpState& w, TexSampler 
                             else if (pop == 0x24) --depth;
                             ++p;
                         }
+                        active = loop_stack.back().entry_active;
                         loop_stack.pop_back();
                         pc = p; advance = false;
                     }
@@ -274,13 +279,14 @@ ExecResult execute_warp(const std::vector<Inst>& code, WarpState& w, TexSampler 
                     ThreadState& t = w.lane[lane];
                     if (!t.lane_active) continue;
                     if (!pmd_ok_lane(f.pmd, w.predicate, lane)) continue;
-                    Vec4 src_val = swizzle(t.r[f.src], f.src_swiz);
+                    Vec4 src_val = swizzle(read_src_lane(t, f.src_class, f.src),
+                                           f.src_swiz);
                     Vec4 sample  = tex(f.tex, src_val, f.mode, src_val[3]);
-                    Vec4& dst    = dst_lvalue_lane(t, f.dst, /*dst_class=*/0);
+                    Vec4& dst    = dst_lvalue_lane(t, f.dst, f.dst_class);
                     write_masked(dst, sample, f.wmsk, false);
                 }
             }
-            // ld/st: not exercised in Sprint 6.
+            // ld/st: not yet exercised.
         }
 
         if (advance) ++pc;

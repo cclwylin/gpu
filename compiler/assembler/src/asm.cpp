@@ -406,10 +406,20 @@ bool assemble_line(const std::string& raw_line, AssembleResult& out, int lineno)
         MemFields f{};
         f.op  = info.op;
         f.pmd = pmd;
-        f.dst = (dst->cls == Operand::OUTPUT) ? encode_dst_out(dst->index) : encode_dst_gpr(dst->index);
+        if (dst->cls == Operand::OUTPUT) {
+            f.dst_class = 1;
+            f.dst       = encode_dst_out(dst->index);
+        } else if (dst->cls == Operand::GPR) {
+            f.dst_class = 0;
+            f.dst       = encode_dst_gpr(dst->index);
+        } else {
+            out.error = "MEM dst must be GPR or output"; out.error_line = lineno; return false;
+        }
         f.wmsk = dst->wmask;
-        f.src = src->index;
+        // src can be GPR / const / varying via the new src_class bits.
+        f.src      = src->index;
         f.src_swiz = src->swizzle;
+        f.src_class = src_class_of(*src);
         if (mnem == "tex" || mnem == "texb" || mnem == "texl" || mnem == "texg") {
             if (opnds.size() < 3) { out.error = "texture op needs binding"; out.error_line = lineno; return false; }
             auto t = parse_operand(opnds[2], false);

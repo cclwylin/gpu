@@ -19,14 +19,10 @@ const char* kVS =
     "mov o1, r1\n";
 
 // FS: gl_FragColor = texture2D(tex0, v0.xy)
-// NB: MEM-format encoding currently has no src_class / dst_class bits, so we
-// (a) move the varying into a GPR before sampling, and
-// (b) move the sampled GPR result into o0.
-// Both gaps are a follow-up sprint.
+// ISA v1.1: MEM format gained src_class + dst_class so the Sprint-4
+// `mov rN, vN; tex; mov oN, rN` workaround collapses to one instruction.
 const char* kFS =
-    "mov r1, v0\n"
-    "tex r0, r1.xy, tex0\n"
-    "mov o0, r0\n";
+    "tex o0, v0.xy, tex0\n";
 
 uint32_t pack(uint8_t r, uint8_t g, uint8_t b) {
     return r | (g << 8) | (b << 16) | (0xFFu << 24);

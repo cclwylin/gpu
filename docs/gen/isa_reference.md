@@ -1,6 +1,6 @@
 <!-- AUTO-GENERATED — do not edit. Regenerate via tools/isa_gen/. -->
 
-# ISA Reference (v1.0)
+# ISA Reference (v1.1)
 
 ## Parameters
 

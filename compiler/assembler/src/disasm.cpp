@@ -131,16 +131,21 @@ std::string disasm_mem(Inst i) {
     std::ostringstream o;
     o << pmd_prefix(f.pmd) << name << " ";
 
-    // Reconstruct dst / src.
+    // Reconstruct dst (now class-aware) / src (now class-aware).
     {
         std::ostringstream d;
-        d << "r" << static_cast<int>(f.dst & 0x1F) << mask_text(f.wmsk);
+        if (f.dst_class) d << "o" << static_cast<int>(f.dst & 0x3);
+        else             d << "r" << static_cast<int>(f.dst & 0x1F);
+        d << mask_text(f.wmsk);
         o << d.str();
     }
     o << ", ";
     {
+        const char* prefix = (f.src_class == SRC_GPR) ? "r"
+                           : (f.src_class == SRC_CONST) ? "c"
+                           : (f.src_class == SRC_VARYING) ? "v" : "?";
         std::ostringstream s;
-        s << "r" << static_cast<int>(f.src) << "." << swizzle_text(f.src_swiz);
+        s << prefix << static_cast<int>(f.src) << "." << swizzle_text(f.src_swiz);
         o << s.str();
     }
     if (name.rfind("tex", 0) == 0) {

@@ -134,9 +134,12 @@ inline FlowFields decode_flow(Inst i) {
     return f;
 }
 
-// ---------- Memory / Texture layout ----------
+// ---------- Memory / Texture layout (ISA v1.1) ----------
 // 63:58 op | 57:56 pmd | 55:51 dst | 50:47 wmsk | 46:42 src
-// 41:34 src_swiz | 33:30 tex | 29:27 mode | 26:0 imm (signed)
+// 41:34 src_swiz | 33:30 tex | 29:27 mode | 26 dst_class | 25:24 src_class | 23:0 imm
+//
+// dst_class: 0 = GPR (dst[4:0] = r0..r31), 1 = output (dst[1:0] = o0..o3)
+// src_class: 00 = GPR, 01 = const, 10 = varying  (matches ALU SrcClass)
 struct MemFields {
     uint8_t  op;
     uint8_t  pmd;
@@ -146,7 +149,9 @@ struct MemFields {
     uint8_t  src_swiz;
     uint8_t  tex;
     uint8_t  mode;
-    int32_t  imm;   // 27-bit signed
+    uint8_t  dst_class;   // 1 bit
+    uint8_t  src_class;   // 2 bits
+    int32_t  imm;         // 24-bit signed
 };
 inline Inst encode_mem(const MemFields& f) {
     return put(f.op,          63, 58)
@@ -157,20 +162,24 @@ inline Inst encode_mem(const MemFields& f) {
          | put(f.src_swiz,     41, 34)
          | put(f.tex,          33, 30)
          | put(f.mode,         29, 27)
-         | put(static_cast<uint64_t>(f.imm) & ((1ull<<27)-1), 26, 0);
+         | put(f.dst_class,    26, 26)
+         | put(f.src_class,    25, 24)
+         | put(static_cast<uint64_t>(f.imm) & ((1ull<<24)-1), 23, 0);
 }
 inline MemFields decode_mem(Inst i) {
     MemFields f{};
-    f.op       = bits(i, 63, 58);
-    f.pmd      = bits(i, 57, 56);
-    f.dst      = bits(i, 55, 51);
-    f.wmsk     = bits(i, 50, 47);
-    f.src      = bits(i, 46, 42);
-    f.src_swiz = bits(i, 41, 34);
-    f.tex      = bits(i, 33, 30);
-    f.mode     = bits(i, 29, 27);
-    uint32_t imm_raw = bits(i, 26, 0);
-    if (imm_raw & (1u << 26)) imm_raw |= 0xF8000000u;
+    f.op        = bits(i, 63, 58);
+    f.pmd       = bits(i, 57, 56);
+    f.dst       = bits(i, 55, 51);
+    f.wmsk      = bits(i, 50, 47);
+    f.src       = bits(i, 46, 42);
+    f.src_swiz  = bits(i, 41, 34);
+    f.tex       = bits(i, 33, 30);
+    f.mode      = bits(i, 29, 27);
+    f.dst_class = bits(i, 26, 26);
+    f.src_class = bits(i, 25, 24);
+    uint32_t imm_raw = bits(i, 23, 0);
+    if (imm_raw & (1u << 23)) imm_raw |= 0xFF000000u;
     f.imm = static_cast<int32_t>(imm_raw);
     return f;
 }

@@ -1,20 +1,28 @@
 ---
 doc: Shader ISA Spec
-version: 1.0 (frozen)
+version: 1.1 (frozen)
 status: active
 owner: E3
 last_updated: 2026-04-25
 ---
 
-# Shader ISA Spec — v1.0
+# Shader ISA Spec — v1.1
 
 Unified shader ISA for VS / FS。**64-bit fixed-width** instruction,
 vec4 ALU with full 8-bit swizzle、source modifier、per-lane predication。
 
 機器可讀版見 [`specs/isa.yaml`](../specs/isa.yaml)(SSOT)。
 
-## 0. v1.0 vs v0.1 Changelog
+## 0. Changelog
 
+### v1.1(Sprint 7)
+| 變更 | 原因 |
+|---|---|
+| MEM format 加 `dst_class`(1 bit)+ `src_class`(2 bit)| 移除 Sprint 4 的 `mov rN, vN; tex; mov oN, rN` workaround;`tex` / `ld` / `st` 直接支援 GPR/const/varying 為 source、GPR/output 為 dest |
+| MEM `imm` 27 → 24 bit(signed) | 為上面兩 field 騰出空間,texture/memory op 24-bit offset 仍綽綽有餘 |
+| Per-lane `break` 語義正式化 | breaking lane 清掉自己 active bit,loop 對其他 lane 繼續;全部 lane break 才退出 loop。取代 v1.0 simulator 的「warp-uniform」近似 |
+
+### v1.0 vs v0.1
 | 變更 | 原因 |
 |---|---|
 | Instruction width 32 → **64-bit** | 32-bit 不夠 swizzle + modifier + 3-operand 同居 |
@@ -96,27 +104,22 @@ vec4 ALU with full 8-bit swizzle、source modifier、per-lane predication。
 - `pmd`:同 ALU(支援 conditional flow)
 - `abs`:1=absolute target、0=PC-relative
 
-### 3.3 Memory / Texture Format
+### 3.3 Memory / Texture Format(v1.1)
 ```
- 63    58 57 56 55 51 50 47 46 42 41 34 33 30 29 27 26  0
-┌────────┬─────┬─────┬────┬─────┬─────┬─────┬─────┬─────┐
-│ opcode │ pmd │ dst │wmsk│ src │ swz │ tex │mode │ imm │
-│   6    │  2  │  5  │ 4  │  5  │  8  │  4  │  3  │ 27  │
-└────────┴─────┴─────┴────┴─────┴─────┴─────┴─────┴─────┘
+ 63    58 57 56 55 51 50 47 46 42 41 34 33 30 29 27 26 25 24 23  0
+┌────────┬─────┬─────┬────┬─────┬─────┬─────┬─────┬───┬─────┬─────┐
+│ opcode │ pmd │ dst │wmsk│ src │ swz │ tex │mode │ dc│ sc  │ imm │
+│   6    │  2  │  5  │ 4  │  5  │  8  │  4  │  3  │ 1 │  2  │ 24  │
+└────────┴─────┴─────┴────┴─────┴─────┴─────┴─────┴───┴─────┴─────┘
 ```
 
-- `dst`:GPR-only(目前無 dst_class bit)
-- `src`:GPR-only(目前無 src_class bit)
+- `dc`(`dst_class`,1 bit):0 = GPR(`dst[4:0]` = r0..r31)、1 = output(`dst[1:0]` = o0..o3)
+- `sc`(`src_class`,2 bit):`00` = GPR、`01` = const、`10` = varying
 - `tex`:texture binding slot 0..15
 - `mode`:0=plain / 1=bias / 2=LOD / 3=gradient(對 tex);0=ld / 1=st(對 mem)
-- `imm`:27-bit signed offset
+- `imm`:24-bit signed offset(v1.1 由 27 縮)
 
-**Known gap(下一版要補)**:MEM format 缺 `dst_class` + `src_class` 共 2 bit。
-目前 compiler 須:
-- `tex` 之前先 `mov r_uv, v_in`(把 varying 拉到 GPR)
-- `tex` 之後 `mov o_n, r_dst`(把結果搬到 output)
-
-從 `imm` 偷 2 bit 可解(textures 不需 27-bit offset),留下個 ISA 修訂。
+v1.0 的 workaround(`mov r_uv, v_in; tex; mov o_n, r_dst`)在 v1.1 已不需要。
 
 ### 3.4 Swizzle Encoding(8-bit)
 
