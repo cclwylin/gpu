@@ -152,11 +152,14 @@ def run_scene(args, scene_path: Path) -> int:
 
 
 def run_example(args, c_path: Path) -> int:
-    """Build glex_<name> and execute it."""
+    """Build glex_<name>, execute it (sw_ref render → PPM + .scene),
+    then run sc_pattern_runner on the captured .scene if available."""
     build_dir = ROOT / args.build_dir
     name = c_path.stem
     OUT_DIR.mkdir(exist_ok=True)
-    out_ppm = OUT_DIR / f"glex_{name}.ppm"
+    sw_ppm    = OUT_DIR / f"glex_{name}.ppm"
+    scene_out = OUT_DIR / f"glex_{name}.scene"
+    sc_ppm    = OUT_DIR / f"glex_{name}.sc.ppm"
 
     # 1. cmake build the target.
     bin_path = build_dir / "glcompat" / f"glex_{name}"
@@ -167,35 +170,74 @@ def run_example(args, c_path: Path) -> int:
         capture_output=True, text=True, check=False)
     if rc.returncode != 0 or not bin_path.is_file():
         print("BUILD FAILED:")
-        # Print only the first error line.
         for line in (rc.stderr or rc.stdout).splitlines():
             if "error:" in line:
-                print("   ", line)
-                break
+                print("   ", line); break
         return 1
 
-    # 2. Run the binary with GLCOMPAT_OUT pointing at our scratch PPM.
+    # 2. Run the binary — sw_ref render + capture .scene.
     import os
     env = dict(os.environ)
-    env["GLCOMPAT_OUT"] = str(out_ppm)
+    env["GLCOMPAT_OUT"]   = str(sw_ppm)
+    env["GLCOMPAT_SCENE"] = str(scene_out)
     rc = run([bin_path], env=env)
     if rc.returncode != 0:
-        print(rc.stdout); print(rc.stderr, file=sys.stderr)
-        return 1
-    print(rc.stderr.strip())     # glcompat prints "saved …" to stderr
+        print(rc.stdout); print(rc.stderr, file=sys.stderr); return 1
+    print(rc.stderr.strip())
 
-    # 3. Summarise.
-    if not out_ppm.is_file():
-        print("(no PPM written)")
-        return 1
-    W, H, buf = read_ppm(out_ppm)
-    paint = painted_count(buf)
+    # 3. SC chain via sc_pattern_runner. The TBF/RSV placeholders cost
+    # O(tile_w × tile_h) cycles per flush, so we cap fb at 64×64 for
+    # the SC pass by default — keeps wall-clock under 10 s on most
+    # examples. Override with --sc-fb-max or env SC_FB_MAX.
+    sc_bin = build_dir / "tests" / "conformance" / "sc_pattern_runner"
+    sc_kv: dict[str, str] = {}
+    if sc_bin.is_file() and scene_out.is_file():
+        env.setdefault("SC_FB_MAX", str(args.sc_fb_max))
+        rc = run([sc_bin, scene_out, sc_ppm], env=env)
+        if rc.returncode != 0:
+            print("SC chain FAILED:")
+            print(rc.stdout); print(rc.stderr, file=sys.stderr)
+        else:
+            sc_kv = parse_kv(rc.stdout)
+            print(rc.stdout.strip())
+    else:
+        if not sc_bin.is_file():
+            print(f"(sc_pattern_runner not built — SC chain skipped)")
+
+    # 4. Summarise.
+    if not sw_ppm.is_file():
+        print("(no PPM written)"); return 1
+    W, H, sw_buf = read_ppm(sw_ppm)
+    sw_paint = painted_count(sw_buf)
     print()
     print("=" * 60)
     print(f"EXAMPLE: {name}.c")
-    print(f"  source : {c_path}")
-    print(f"  output : {out_ppm}  ({W}×{H})")
-    print(f"  painted: {paint} of {W*H} pixels  ({100.0*paint/(W*H):.1f}%)")
+    print(f"  source        : {c_path}")
+    print(f"  sw_ref PPM    : {sw_ppm}  ({W}×{H})")
+    print(f"  sw_ref painted: {sw_paint}  ({100.0*sw_paint/(W*H):.1f}%)")
+    if scene_out.is_file():
+        ntri = sum(1 for ln in scene_out.read_text().splitlines()
+                   if ln and ln[0] in " \t-0.123456789")
+        print(f"  scene capture : {scene_out}  ({ntri // 3} triangles)")
+    if sc_kv:
+        sw_W, sw_H, sw_buf2 = read_ppm(sw_ppm)
+        sc_W, sc_H, sc_buf  = read_ppm(sc_ppm)
+        cycles  = int(sc_kv.get("CYCLES",  "0"))
+        flushes = int(sc_kv.get("FLUSHES", "0"))
+        sc_paint = int(sc_kv.get("PAINTED", "0"))
+        cyc_per_pix = cycles / sc_paint if sc_paint else 0.0
+        print(f"  SC PPM        : {sc_ppm}  ({sc_W}×{sc_H})")
+        print(f"  SC painted    : {sc_paint}  ({100.0*sc_paint/(sc_W*sc_H):.1f}%)")
+        print(f"  SC cycles     : {cycles:,}")
+        print(f"  SC flushes    : {flushes}")
+        print(f"  cyc / pixel   : {cyc_per_pix:.1f}")
+        if (sw_W, sw_H) == (sc_W, sc_H):
+            diff = rmse(sw_buf2, sc_buf)
+            print(f"  RMSE swref↔sc : {diff:.3f}")
+        else:
+            print(f"  (size mismatch sw {sw_W}×{sw_H} vs sc {sc_W}×{sc_H} — "
+                  "RMSE skipped; run with --sc-fb-max ≥ {} to compare)"
+                  .format(max(sw_W, sw_H)))
     print("=" * 60)
     return 0
 
@@ -205,6 +247,9 @@ def main() -> int:
     ap.add_argument("pattern", nargs="?")
     ap.add_argument("--build-dir", default="build")
     ap.add_argument("--list", action="store_true")
+    ap.add_argument("--sc-fb-max", type=int, default=64,
+                    help="Cap SC-chain framebuffer size per side (default 64; "
+                         "TBF/RSV cycle placeholders scale with tile area)")
     args = ap.parse_args()
 
     if args.list or args.pattern is None:

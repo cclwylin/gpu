@@ -163,6 +163,23 @@ int sc_main(int argc, char** argv) {
         std::fprintf(stderr, "parse: %s\n", err.c_str()); return 1;
     }
 
+    // Optional cap: TBF/RSV placeholders cost O(tile_w × tile_h) cycles
+    // per flush, so high-res chains take minutes. SC_FB_MAX scales the
+    // framebuffer (and the scene's NDC-derived screen-space coords are
+    // unaffected — viewport is set per-block to the new dims).
+    if (const char* e = std::getenv("SC_FB_MAX")) {
+        const int cap = std::atoi(e);
+        if (cap > 0 && (scene.width > cap || scene.height > cap)) {
+            const float sx = (float)cap / scene.width;
+            const float sy = (float)cap / scene.height;
+            const float s = std::min(sx, sy);
+            scene.width  = (int)(scene.width  * s);
+            scene.height = (int)(scene.height * s);
+            std::fprintf(stderr, "[sc] downscaled to %dx%d (SC_FB_MAX=%d)\n",
+                         scene.width, scene.height, cap);
+        }
+    }
+
     // ---- VS: copy c0→o0 (position), c1→o1 (varying[0] = colour) ----
     auto a = gpu::asm_::assemble("mov o0, c0\nmov o1, c1\n");
     if (!a.error.empty()) {
@@ -213,7 +230,15 @@ int sc_main(int argc, char** argv) {
     pa_rs.fb_w = scene.width; pa_rs.fb_h = scene.height;
     pa_rs.msaa_4x = scene.msaa;
     pa_rs.varying_count = 1;
-    pfo_tbf.quads_per_flush = 1;
+    // Per-quad flush gives the maximum cycle resolution but quickly
+    // bogs the chain at high resolution because the placeholder TBF/RSV
+    // latencies scale with tile_w × tile_h. Auto-batch: aim for at most
+    // ~256 flushes per frame regardless of triangle count. Override via
+    // SC_QUADS_PER_FLUSH env var.
+    int qpf = 1;
+    if (const char* e = std::getenv("SC_QUADS_PER_FLUSH")) qpf = std::max(1, std::atoi(e));
+    else if (scene.width * scene.height >= 16384) qpf = (scene.width * scene.height) / 256;
+    pfo_tbf.quads_per_flush = qpf;
 
     src.clk(clk); src.rst_n(rst_n);
     src.valid(s0_valid); src.ready(s0_ready); src.data(s0_data);
@@ -277,17 +302,21 @@ int sc_main(int argc, char** argv) {
         src.push(reinterpret_cast<uint64_t>(&jobs[i]));
     }
 
-    // Generous bound: simulate up to 50 ms (5 M cycles); abort early
-    // if we have already drained at least one tile flush per triangle
-    // and the pipeline is idle.
+    // Drain-detect: chain finished when sink.seen hasn't grown for
+    // `idle_threshold` consecutive steps. The threshold has to exceed
+    // the worst-case inter-flush latency, which for the current TBF/RSV
+    // placeholders is O(tile_w × tile_h) cycles per flush — at 256×256
+    // that's ~650 µs. Use 50 × 100 µs = 5 ms idle to comfortably outwait
+    // a flush boundary, capped at max_steps so a stuck pipeline doesn't
+    // simulate forever.
     const sc_core::sc_time step(100, sc_core::SC_US);
-    const int max_steps = 500;
-    const int min_flushes = static_cast<int>(scene.positions.size() / 3);
+    const int max_steps      = 20000;    // 2 s sim cap = 200 M cycles
+    const int idle_threshold = 50;       // 5 ms of pipeline-idle
     int prev_seen = -1, idle_steps = 0;
     for (int i = 0; i < max_steps; ++i) {
         sc_core::sc_start(step);
-        if (sink.seen >= min_flushes && sink.seen == prev_seen) {
-            if (++idle_steps >= 2) break;     // pipeline drained
+        if (sink.seen > 0 && sink.seen == prev_seen) {
+            if (++idle_steps >= idle_threshold) break;
         } else {
             idle_steps = 0;
         }

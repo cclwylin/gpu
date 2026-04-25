@@ -119,6 +119,7 @@ void glutMainLoop(void) {
     if (g.reshape_cb) g.reshape_cb(g.win_w, g.win_h);
     if (g.display_cb) g.display_cb();
     glcompat::save_framebuffer();
+    glcompat::save_scene();
     std::exit(0);
 }
 

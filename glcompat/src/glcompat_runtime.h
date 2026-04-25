@@ -146,4 +146,10 @@ void flush_immediate();
 // Save the framebuffer to a PPM file. Path: $GLCOMPAT_OUT or "out.ppm".
 void save_framebuffer();
 
+// If $GLCOMPAT_SCENE is set, write the accumulated frame geometry as a
+// .scene file matching the format `tests/conformance/scene_runner.cpp`
+// + `sc_pattern_runner.cpp` parse. Each glEnd appends 3·N clip-space
+// vertices (positions + colors) to the scene buffer.
+void save_scene();
+
 }  // namespace glcompat
