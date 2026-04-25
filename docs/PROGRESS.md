@@ -1,7 +1,7 @@
 ---
 doc: Progress Log
 purpose: Human-readable index of what shipped per commit, mapped to Master Plan milestones.
-last_updated: 2026-04-25 (Sprint 22 — RS cycle-accurate; vertex pipeline 5/5 CA)
+last_updated: 2026-04-25 (Sprint 28 — Phase 2 CA buildout complete; 15/15 CA blocks)
 ---
 
 # PROGRESS.md
@@ -60,14 +60,21 @@ itself — `git show <sha>`.
 | 31 | `aa4265a` | Phase 2 / Sprint 20 | systemc: ShaderCore cycle-accurate block (SC_ca) |
 | 32 | `b408dcf` | Phase 2 / Sprint 21 | systemc: PrimitiveAssembly cycle-accurate (PA_ca) |
 | 33 | `e481719` | Phase 2 / Sprint 22 | systemc: Rasterizer cycle-accurate (RS_ca) |
+| 34 | `7ea722e` | Phase 2 / Sprint 23 | systemc: gpu_top_ca chain (CP→VF→SC) |
+| 35 | `65b27ab` | Phase 2 / Sprint 24 | systemc: TextureUnit cycle-accurate (TMU_ca) |
+| 36 | `82071d1` | Phase 2 / Sprint 25 | systemc: PerFragmentOps cycle-accurate (PFO_ca) |
+| 37 | `29e9ec7` | Phase 2 / Sprint 26 | systemc: TileBuffer + ResolveUnit cycle-accurate |
+| 38 | `1d5faa7` | Phase 2 / Sprint 27 | systemc: MMU + L2 + MC cycle-accurate (memory subsystem) |
+| 39 | `82bdaf6` | Phase 2 / Sprint 28 | systemc: CSR + PMU + TileBinner cycle-accurate (sidebands) |
 
 ---
 
 ## Status snapshot
 
-- **Master Plan phase**: **Phase 2 kickoff** (Sprint 18 lands first
-  cycle-accurate block template; Phase 1 LT chain still the production
-  path)
+- **Master Plan phase**: **Phase 2 buildout complete** — every chip
+  block now has a cycle-accurate sibling. Phase 1 LT chain still the
+  production path; full-pipeline CA wiring deferred until payload
+  adapters land in Phase 2.x.
 - **Tests passing**: 17/17 (CTest, local macOS / GCC-15)
   - `compiler.{asm_roundtrip, sim_basic, glsl_compile, sim_warp,
     warp_break, glsl_ext, spv_lower}`
@@ -75,12 +82,13 @@ itself — `git show <sha>`.
     stencil_scissor}`
   - `conformance.{triangle_white, triangle_msaa, triangle_rgb}`
   - Skipped (Docker-only): `systemc.tlm_hello`,
-    `systemc.cp_ca`, `systemc.vf_ca`, `systemc.sc_ca`, `systemc.pa_ca`,
-    `systemc.rs_ca`, `compiler.glsl_to_spv`
+    `systemc.{cp,vf,sc,pa,rs,gpu_top,tmu,pfo,tbf_rsv,mem,sidebands}_ca`,
+    `compiler.glsl_to_spv`
 - **ISA**: v1.1 frozen (MEM class bits + per-lane break formalised)
 - **TLM blocks**: 5 of 15 (CP / VF / SC / PA / RS) at Phase 1 LT;
-  **5** with Phase 2 cycle-accurate variants — **complete vertex
-  pipeline CP / VF / SC / PA / RS now exists in CA**
+  **15 of 15** with Phase 2 cycle-accurate variants — full set
+  CP / VF / SC / PA / RS / TMU / PFO / TBF / RSV / MMU / L2 / MC /
+  CSR / PMU / BIN landed.
 - **Flavour-suffix convention**: file + class suffix indicates SystemC
   abstraction level — `_lt` (LT, b_transport) / `_at` (AT, future) /
   `_pv` (PV, future) / `_ca` (cycle-accurate, sc_signal+CTHREAD).
@@ -651,3 +659,128 @@ migration order in [`docs/phase2_kickoff.md`](phase2_kickoff.md).
   CA path (LT has scissor since Sprint 17; CA copy doesn't yet).
   TMU / PFO / TBF / RSV / MMU / L2 / MC / CSR / PMU CA variants
   are still future sprints.
+
+## Sprint 23 — gpu_top_ca chain(`7ea722e`)
+- **Done**:
+  - `top/include/gpu_systemc/gpu_top_ca.h` + `top/src/gpu_top_ca.cpp`
+    — chip-level CA top wires CP_ca → VF_ca → SC_ca with internal
+    `sc_signal` handshakes, exposes the post-SC output as the
+    chain output for tb-side observation.
+  - PA_ca / RS_ca are NOT in the chain yet (their payloads are
+    PrimAssemblyJob / RasterJob, not ShaderJob — bridging needs an
+    adapter block, deferred to Phase 2.x).
+  - Testbench `test_gpu_top_ca.cpp` (Docker-only): one ShaderJob
+    enqueued at CP, sink sees 3 copies (vertices_per_cmd) of the
+    same pointer; `job.outputs[0].x = c0+c1`.
+- **Tests**: 17/17 local still green; gpu_systemc lib compiles.
+- **Out of scope**: full-pipeline chain through PA / RS / PFO /
+  TBF / RSV; payload-conversion adapter blocks; rate-matching
+  buffers between sub-blocks.
+
+## Sprint 24 — TextureUnit cycle-accurate(`65b27ab`)
+- **Done**:
+  - `textureunit_ca.{h,cpp}` — wire-level CA wrap of
+    `gpu::sample_texture`. Per accepted `TextureJob`, walks
+    `requests[i]` and fills `samples[i]` in order, forwards the same
+    pointer downstream. 1 cycle / request placeholder.
+  - New payload `TextureJob{tex, requests, samples}` in
+    `gpu_systemc/payload.h`. `gpu_systemc` lib gains link dep on
+    `gpu_sw_ref`.
+  - Testbench `test_textureunit_ca.cpp` (Docker-only): 2×2 RGBA8
+    (R,G,B,W) with NEAREST + 4 sample requests at texel centres,
+    asserts per-channel correctness on each result and 1-job sink
+    hit.
+- **Tests**: 17/17 local still green.
+- **Out of scope**: bilinear / trilinear timing, mipmap LOD
+  selection, L1 Tex$ tag-check pipeline, format decoders for
+  RGB565 / ETC1.
+
+## Sprint 25 — PerFragmentOps cycle-accurate(`82071d1`)
+- **Done**:
+  - `perfragmentops_ca.{h,cpp}` — wire-level CA wrap of
+    `gpu::pipeline::per_fragment_ops`. Per accepted `PfoJob{ctx,
+    quad}`, runs the full PFO logic in place: depth/stencil test,
+    alpha-to-coverage, blending, color/depth/stencil writeback.
+    Both 1× and 4× MSAA paths are exercised through the underlying
+    sw_ref function. Timing placeholder: 4 cycles per quad.
+  - New payload `PfoJob{ctx, quad}`.
+  - Testbench `test_perfragmentops_ca.cpp` (Docker-only): 4×4 fb,
+    1× MSAA, no blend / depth, push 1 quad with 4 distinct-coloured
+    fragments at (0,0)…(1,1), assert R/G/B/W lands at the expected
+    RGBA8 pixels.
+- **Tests**: 17/17 local still green.
+- **Out of scope**: 5-stage early-Z / late-Z pipeline timing, hi-Z
+  block, blend pipe forwarding hazards.
+
+## Sprint 26 — TileBuffer + ResolveUnit cycle-accurate(`29e9ec7`)
+- **Done**: Two CA blocks landed together — they share
+  `TileFlushJob` and chain naturally on tile-flush.
+  - `tilebuffer_ca.{h,cpp}` — storage placeholder. The on-chip
+    ~64 KB sample SRAM is modelled by
+    `Context::fb.{color,depth,stencil}_samples` on the host;
+    TBF_ca only stamps a flush-rate timing (1 cyc / pixel).
+  - `resolveunit_ca.{h,cpp}` — wrap of `gpu::pipeline::resolve`.
+    Box-filters 4× MSAA samples → 1× RGBA8 in `fb.color` in place.
+    1 cyc / pixel placeholder.
+  - New payload `TileFlushJob{ctx, tile_x/y/w/h}`.
+  - Testbench `test_tilebuffer_resolve_ca.cpp` (Docker-only):
+    4×4 MSAA-4× fb, preload `color_samples` per pixel as
+    {0xFF,0xFF,0,0} on R, push 1 `TileFlushJob` through TBF→RSV
+    chain, assert every pixel resolves to 0x00000080 (=
+    (0xFF+0xFF+0+0+2)>>2).
+- **Tests**: 17/17 local still green.
+- **Out of scope**: 8-bank SRAM bank-conflict modeling; tile-bin
+  metadata; explicit-resolve `glBlitFramebuffer` path.
+
+## Sprint 27 — MMU + L2 + MC cycle-accurate (memory subsystem)(`1d5faa7`)
+- **Done**: Three CA blocks landed together — they share
+  `MemRequest` and chain naturally as MMU → L2 → MC.
+  - `memorymanagementunit_ca.{h,cpp}` — identity-map placeholder
+    with `va_limit` fault check. 1 cyc / req placeholder.
+  - `l2cache_ca.{h,cpp}` — pass-through with 4-cyc hit-latency
+    stamp (no actual caching).
+  - `memorycontroller_ca.{h,cpp}` — owns a backing
+    `std::vector<uint8_t>` "DRAM" (default 64 KiB,
+    ctor-configurable). Per request, executes the read or write
+    into the DRAM in place (or no-ops on fault). 12-cyc
+    bank-latency placeholder.
+  - New payload `MemRequest{addr, size, is_write, data, fault}`.
+  - Testbench `test_memory_subsystem_ca.cpp` (Docker-only): chains
+    MMU→L2→MC, pushes one 16-byte write at addr 0x1000 then a
+    16-byte read at the same addr (separate request objects),
+    asserts read-back matches the write pattern and sink saw 2
+    hits.
+- **Tests**: 17/17 local still green.
+- **Out of scope**: real TLB, real cache lines, DRAM bank model
+  with row buffers / refresh, multi-port arbitration,
+  write-combining.
+
+## Sprint 28 — CSR + PMU + TileBinner cycle-accurate (sidebands)(`82bdaf6`)
+- **Done**: Three independent sideband CA blocks. They don't
+  naturally chain (unlike vertex / mem subsystems), so the test
+  spins up three Source/CA/Sink trios in one `sc_main` and
+  exercises each in parallel.
+  - `controlstatusregister_ca.{h,cpp}` — 16 × 32-bit register
+    file. Read / write per `CsrJob`. The chip-internal handshake;
+    APB / AHB bus protocol is host-side and out of scope here.
+  - `perfmonitorunit_ca.{h,cpp}` — rolling cycle counter via a
+    second `SC_CTHREAD` ticking every clock edge from `rst_n`
+    deassertion. Per accepted `PmuJob`, snapshots the current
+    count into `job->cycles`.
+  - `tilebinner_ca.{h,cpp}` — per-triangle bbox → tile-grid hit
+    increments into `bin_counts[]`. 1 cyc / tile-update
+    placeholder.
+  - New payload structs `CsrJob` / `PmuJob` / `TileBinJob`.
+  - Testbench `test_sidebands_ca.cpp` (Docker-only): CSR
+    write 0xDEADBEEF→reg5, read back, assert match; PMU query
+    after ~5 µs, assert cycles > 0; BIN 4×4 grid (16-px tiles),
+    2 tris with predictable bboxes, assert `bin_counts` at
+    (0,0), (1,1), (2,1) are 1.
+- **Tests**: 17/17 local still green.
+- **Out of scope**: APB / AHB bus protocol, full PMU counter bank
+  (instructions retired, cache hit/miss, …), 2-stage binner pipe.
+- **Phase 2 milestone**: this closes the Phase-2 CA buildout — all
+  15 SystemC blocks now have cycle-accurate flavours alongside
+  their LT / pass-through flavours. Chip-level full-pipeline
+  wiring deferred to Phase 2.x where payload-conversion adapter
+  blocks land.
