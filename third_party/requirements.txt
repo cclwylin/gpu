@@ -1,0 +1,22 @@
+# Python dependencies — pinned.
+# Used by CI + local dev (pip install -r third_party/requirements.txt).
+
+# Testing / TB
+cocotb==1.8.1
+cocotb-bus==0.2.1
+pytest==8.0.0
+
+# Codegen / tooling
+Jinja2==3.1.3
+PyYAML==6.0.1
+click==8.1.7
+
+# Lint / format
+black==24.3.0
+ruff==0.3.0
+mypy==1.8.0
+
+# Optional
+matplotlib==3.8.2       # perf dashboard
+numpy==1.26.4           # scene gen helpers
+Pillow==10.2.0          # framebuffer diff / image io

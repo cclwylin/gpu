@@ -1,0 +1,117 @@
+# ------------------------------------------------------------------------------
+# Third-party version lock
+# ------------------------------------------------------------------------------
+# 這份是 SSOT。Dockerfile 和 setup_deps.sh 會讀。
+# 升版流程:改這裡 → PR → CI rebuild Docker → 通過才 merge。
+# ------------------------------------------------------------------------------
+
+version: 1.0
+status: frozen (Phase 0)
+last_updated: 2026-04-25
+
+# ------------------------------------------------------------------------------
+# Compile toolchain (from base image — pinned there)
+# ------------------------------------------------------------------------------
+toolchain:
+  ubuntu: "22.04"
+  gcc: "11.4.0"
+  clang: "14.0.0"
+  cmake: "3.22.1"
+  python: "3.10"
+
+# ------------------------------------------------------------------------------
+# Mandatory deps
+# ------------------------------------------------------------------------------
+deps:
+
+  systemc:
+    version: "2.3.3"
+    url: "https://github.com/accellera-official/systemc.git"
+    rev: "v2.3.3"
+    sha256_expected: "null"    # filled after first download
+    license: "Apache-2.0"
+    notes: "Phase 2 可考慮升 3.0 若穩定,但要全 regression。"
+
+  uvm_systemc:
+    version: "1.0-beta5"
+    url: "https://www.accellera.org/images/downloads/standards/systemc/uvm-systemc-1.0-beta5.tar.gz"
+    sha256_expected: "null"
+    license: "Apache-2.0"
+    depends_on: [systemc]
+
+  verilator:
+    version: "5.020"
+    url: "https://github.com/verilator/verilator.git"
+    rev: "v5.020"
+    license: "LGPL"
+    notes: "Lint + optional sim"
+
+  icarus:
+    version: "12.0"
+    url: "https://github.com/steveicarus/iverilog.git"
+    rev: "v12_0"
+    license: "LGPL"
+
+  cocotb:
+    version: "1.8.1"
+    install: "pip"
+    package: "cocotb==1.8.1"
+    license: "BSD-3"
+
+  dramsim3:
+    version: "latest-pinned"
+    url: "https://github.com/umd-memsys/DRAMsim3.git"
+    rev: "29817593b3389f1337235d63cac515024ab8fd6e"   # placeholder — fill on first setup
+    license: "MIT"
+
+  glslang:
+    version: "14.0.0"
+    url: "https://github.com/KhronosGroup/glslang.git"
+    rev: "14.0.0"
+    license: "BSD-3"
+
+  symbiyosys:
+    version: "latest-pinned"
+    url: "https://github.com/YosysHQ/sby.git"
+    rev: "placeholder-commit-sha"
+    license: "ISC"
+
+  yosys:
+    version: "0.38"
+    url: "https://github.com/YosysHQ/yosys.git"
+    rev: "yosys-0.38"
+    license: "ISC"
+
+# ------------------------------------------------------------------------------
+# Optional deps
+# ------------------------------------------------------------------------------
+optional:
+
+  verible:
+    version: "v0.0-3724-g53979b4c"
+    url: "https://github.com/chipsalliance/verible.git"
+    license: "Apache-2.0"
+
+  spirv_tools:
+    version: "2024.1"
+    url: "https://github.com/KhronosGroup/SPIRV-Tools.git"
+    rev: "v2024.1"
+    license: "Apache-2.0"
+
+  googletest:
+    version: "1.14.0"
+    url: "https://github.com/google/googletest.git"
+    rev: "v1.14.0"
+    license: "BSD-3"
+
+# ------------------------------------------------------------------------------
+# Python 全部 pip 安裝,版本 pin 在 requirements.txt
+# ------------------------------------------------------------------------------
+python_deps_file: requirements.txt
+
+# ------------------------------------------------------------------------------
+# Notes
+# ------------------------------------------------------------------------------
+# - 所有 git rev 要用 tag 或 commit SHA,絕不用 main/master。
+# - sha256_expected:第一次 setup 後填,之後 CI 驗證。
+# - 升版必須全 regression 綠 + Docker image rebuild。

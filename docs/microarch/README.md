@@ -1,36 +1,41 @@
 # docs/microarch/ — Per-Block Microarchitecture
 
-每個 block 一份 microarch 文件,Phase 0 內逐步補齊。
+每個 block 一份 microarch 文件。draft v0.1 首版已寫完,Phase 0 內 iterate。
+
+## Index
+
+| Block | File | Owner |
+|---|---|---|
+| Command Processor | [cp.md](cp.md) | E1 |
+| Vertex Fetch | [vf.md](vf.md) | E1 |
+| Shader Core | [sc.md](sc.md) | E1 |
+| Primitive Assembly | [pa.md](pa.md) | E1 |
+| Tile Binner | [tb.md](tb.md) | E2 |
+| Rasterizer | [rs.md](rs.md) | E2 |
+| Texture Unit | [tmu.md](tmu.md) | E2 |
+| Per-Fragment Ops | [pfo.md](pfo.md) | E2 |
+| Tile Buffer | [tbf.md](tbf.md) | E2 |
+| Resolve Unit | [rsv.md](rsv.md) | E2 |
+| MMU | [mmu.md](mmu.md) | E1 |
+| L2 Cache | [l2.md](l2.md) | E1 |
+| Memory Controller | [mc.md](mc.md) | E1 |
+| CSR Block | [csr.md](csr.md) | E3 |
+| Perf Monitor Unit | [pmu.md](pmu.md) | E3 |
 
 ## Template
 
-建議結構:
+每份結構:
 1. Purpose
-2. Block diagram
-3. Interface(ports + protocols)
-4. Internal pipeline / FSM
-5. Register file / state
-6. Timing / throughput target
-7. Corner cases
-8. Verification plan
-9. Open questions
+2. Block Diagram
+3. Interface
+4. Internal pipeline / FSM / state
+5. Timing / throughput target
+6. Corner cases
+7. Verification plan
+8. Open questions
 
-## Planned Files
+## Status Convention
 
-| File | Block | Owner | Target |
-|---|---|---|---|
-| `cp.md` | Command Processor | E1 | Phase 0 end |
-| `vf.md` | Vertex Fetch | E1 | Phase 0 end |
-| `sc.md` | Shader Core | E1 | Phase 0 end |
-| `pa.md` | Primitive Assembly | E1 | Phase 0 end |
-| `tb.md` | Tile Binner | E2 | Phase 0 end |
-| `rs.md` | Rasterizer | E2 | Phase 0 end |
-| `tmu.md` | Texture Unit | E2 | Phase 0 end |
-| `pfo.md` | Per-Fragment Ops | E2 | Phase 0 end |
-| `tbf.md` | Tile Buffer | E2 | Phase 0 end |
-| `rsv.md` | Resolve Unit | E2 | Phase 0 end |
-| `mmu.md` | MMU | E1 | Phase 0 end |
-| `l2.md` | L2 Cache | E1 | Phase 0 end |
-| `mc.md` | Memory Controller | E1 | Phase 0 end |
-| `csr.md` | CSR Block | E3 | Phase 0 end |
-| `pmu.md` | Perf Monitor Unit | E3 | Phase 0 end |
+- `draft v0.1`:首版,待 Phase 0 review
+- `draft v0.X`:Phase 0 內 iterate
+- `frozen v1.0`:Phase 0 exit 鎖定

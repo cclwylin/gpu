@@ -1,13 +1,27 @@
 #!/usr/bin/env bash
-# Install build-time dependencies. Phase 0 placeholder — to be completed
-# when third_party versions are frozen.
+# -----------------------------------------------------------------------------
+# Install build-time deps locally. Prefer docker/Dockerfile for reproducibility.
+# 此腳本僅為 local dev convenience(已有 compiler / cmake / python 的 ubuntu)。
+# -----------------------------------------------------------------------------
 set -euo pipefail
 
-echo "[ci] setup_deps: TBD (pending Phase 0 third_party freeze)"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 
-# Planned actions:
-#   - fetch / build SystemC 2.3.3
-#   - fetch / build UVM-SystemC 1.0 beta5
-#   - fetch / build DRAMSim3
-#   - fetch / build glslang
-#   - install Verilator 5.x
+echo "[setup] Python deps..."
+pip3 install --user -r third_party/requirements.txt
+
+echo "[setup] Checking tool availability..."
+for tool in clang-format clang-tidy verilator iverilog cmake python3; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "  [warn] $tool not found — consider using docker/Dockerfile instead"
+  fi
+done
+
+echo "[setup] Checking SystemC..."
+if [ -z "${SYSTEMC_HOME:-}" ] || [ ! -d "$SYSTEMC_HOME" ]; then
+  echo "  [warn] SYSTEMC_HOME not set. Install via docker or build per third_party/versions.yaml."
+fi
+
+echo "[setup] Done. For full reproducibility:"
+echo "  docker build -f docker/Dockerfile -t gpu-dev:v1 ."

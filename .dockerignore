@@ -1,0 +1,3 @@
+# Reduce context sent to Docker build (only need requirements.txt).
+*
+!third_party/requirements.txt

@@ -6,70 +6,89 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  # 預先推到 registry 後改用該 image。尚未推之前每次都會重 build,慢但正確。
+  DEV_IMAGE: gpu-dev:v1
+
 jobs:
   # ---------------------------------------------------------------------------
-  # Lint
+  # 每個 job 都跑在同一個 Docker image,確保工具版本與 third_party/versions.yaml
+  # 對齊。Local dev 用 ci/setup_deps.sh;CI 一律走 Docker。
   # ---------------------------------------------------------------------------
+
+  docker-build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build dev image
+        run: docker build -f docker/Dockerfile -t ${{ env.DEV_IMAGE }} .
+      - name: Save image
+        run: docker save ${{ env.DEV_IMAGE }} | gzip > /tmp/image.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dev-image
+          path: /tmp/image.tar.gz
+          retention-days: 1
+
   lint:
+    needs: docker-build
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - name: Setup
+      - uses: actions/download-artifact@v4
+        with:
+          name: dev-image
+          path: /tmp
+      - run: docker load < /tmp/image.tar.gz
+      - name: Run all lint via Docker
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-format clang-tidy python3-pip
-          pip3 install black ruff mypy
-      - name: C++ / SystemC clang-format check
-        run: bash ci/check_clang_format.sh
-      - name: Python lint (ruff + black check)
-        run: bash ci/check_python.sh
-      - name: YAML validate (specs/*.yaml)
-        run: bash ci/check_specs.sh
+          docker run --rm -v "$PWD":/work -w /work ${{ env.DEV_IMAGE }} bash -c "
+            ci/check_clang_format.sh &&
+            ci/check_python.sh &&
+            ci/check_specs.sh
+          "
 
-  # ---------------------------------------------------------------------------
-  # Verilator / Verilog lint (Phase 3+)
-  # ---------------------------------------------------------------------------
   rtl-lint:
+    needs: docker-build
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install Verilator
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y verilator
-      - name: Run verilator --lint-only
-        run: bash ci/check_verilog.sh
+      - uses: actions/download-artifact@v4
+        with: {name: dev-image, path: /tmp}
+      - run: docker load < /tmp/image.tar.gz
+      - name: Verilator lint
+        run: docker run --rm -v "$PWD":/work -w /work ${{ env.DEV_IMAGE }} bash ci/check_verilog.sh
 
-  # ---------------------------------------------------------------------------
-  # Build + smoke test
-  # ---------------------------------------------------------------------------
   build:
+    needs: docker-build
     runs-on: ubuntu-22.04
     strategy:
       matrix:
         compiler: [gcc, clang]
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - name: Setup deps
-        run: bash ci/setup_deps.sh
-      - name: Build sw_ref + compiler + systemc
-        run: bash ci/build.sh ${{ matrix.compiler }}
-      - name: Smoke test (10 scene, <5 min)
-        run: bash ci/smoke.sh
+        with: {submodules: recursive}
+      - uses: actions/download-artifact@v4
+        with: {name: dev-image, path: /tmp}
+      - run: docker load < /tmp/image.tar.gz
+      - name: Build + smoke
+        run: |
+          docker run --rm -v "$PWD":/work -w /work ${{ env.DEV_IMAGE }} bash -c "
+            ci/build.sh ${{ matrix.compiler }} &&
+            ci/smoke.sh
+          "
 
-  # ---------------------------------------------------------------------------
-  # Regmap / ISA generation sanity (no drift)
-  # ---------------------------------------------------------------------------
   gen-check:
+    needs: docker-build
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - name: Regenerate from specs/
-        run: bash ci/regen.sh
-      - name: Assert no drift in generated files
+      - uses: actions/download-artifact@v4
+        with: {name: dev-image, path: /tmp}
+      - run: docker load < /tmp/image.tar.gz
+      - name: Regenerate from specs/ and diff
         run: |
+          docker run --rm -v "$PWD":/work -w /work ${{ env.DEV_IMAGE }} bash ci/regen.sh
           git diff --exit-code || (
             echo "::error::Generated files out of sync with specs/"
             exit 1
