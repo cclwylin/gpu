@@ -71,6 +71,28 @@ struct PfoJob {
     const gpu::Quad*  quad = nullptr;
 };
 
+// Sprint 28 CSR / PMU / TileBinner job structs.
+struct CsrJob {
+    bool     is_write = false;
+    uint32_t reg_idx  = 0;        // 0..15
+    uint32_t value    = 0;        // in for write, out for read
+};
+
+struct PmuJob {
+    uint64_t cycles  = 0;         // out: cycle counter at request time
+};
+
+struct TileBinTri {
+    int xmin = 0, xmax = 0, ymin = 0, ymax = 0;
+};
+struct TileBinJob {
+    int                       tile_size = 16;
+    int                       grid_w = 0, grid_h = 0;
+    std::vector<TileBinTri>   triangles;
+    // bin_counts[grid_h * grid_w], row-major. Filled by TileBinnerCa.
+    std::vector<uint32_t>     bin_counts;
+};
+
 // Sprint 27 MemRequest — virtual-address read/write request, passed
 // through MMU_ca → L2_ca → MC_ca. The MC owns the backing DRAM.
 //   - is_write=false: MC fills `data` with `size` bytes from addr

@@ -47,6 +47,9 @@ add_library(gpu_systemc STATIC
     blocks/memorymanagementunit/src/memorymanagementunit_ca.cpp
     blocks/l2cache/src/l2cache_ca.cpp
     blocks/memorycontroller/src/memorycontroller_ca.cpp
+    blocks/controlstatusregister/src/controlstatusregister_ca.cpp
+    blocks/perfmonitorunit/src/perfmonitorunit_ca.cpp
+    blocks/tilebinner/src/tilebinner_ca.cpp
     top/src/gpu_top.cpp
     top/src/gpu_top_ca.cpp
 )
@@ -64,6 +67,9 @@ target_include_directories(gpu_systemc PUBLIC
     blocks/memorymanagementunit/include
     blocks/l2cache/include
     blocks/memorycontroller/include
+    blocks/controlstatusregister/include
+    blocks/perfmonitorunit/include
+    blocks/tilebinner/include
     top/include)
 target_link_libraries(gpu_systemc PUBLIC SystemC::systemc gpu_compiler gpu_sw_ref)
 # SystemC lib is a dylib on macOS; CMake may need the rpath.
@@ -158,5 +164,12 @@ if(GPU_BUILD_TESTS)
             INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
             BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
         add_test(NAME systemc.mem_ca COMMAND test_memory_subsystem_ca)
+
+        add_executable(test_sidebands_ca tb/test_sidebands_ca.cpp)
+        target_link_libraries(test_sidebands_ca PRIVATE gpu_systemc)
+        set_target_properties(test_sidebands_ca PROPERTIES
+            INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
+            BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
+        add_test(NAME systemc.sidebands_ca COMMAND test_sidebands_ca)
     endif()
 endif()
