@@ -204,5 +204,12 @@ if(GPU_BUILD_TESTS)
             INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
             BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
         add_test(NAME systemc.pfo_tbf_adapter_ca COMMAND test_pfo_tbf_adapter_ca)
+
+        add_executable(test_full_chain_ca tb/test_full_chain_ca.cpp)
+        target_link_libraries(test_full_chain_ca PRIVATE gpu_systemc)
+        set_target_properties(test_full_chain_ca PROPERTIES
+            INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
+            BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
+        add_test(NAME systemc.full_chain_ca COMMAND test_full_chain_ca)
     endif()
 endif()
