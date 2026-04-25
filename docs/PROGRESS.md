@@ -1,7 +1,7 @@
 ---
 doc: Progress Log
 purpose: Human-readable index of what shipped per commit, mapped to Master Plan milestones.
-last_updated: 2026-04-25 (Sprint 19 — VF cycle-accurate)
+last_updated: 2026-04-25 (Sprint 20 — SC cycle-accurate)
 ---
 
 # PROGRESS.md
@@ -57,6 +57,7 @@ itself — `git show <sha>`.
 | 28 | `d669695` | refactor             | revert `_cycleaccurate` → `_ca` (concise abbrev policy) |
 | 29 | `87f1cb9` | refactor          | systemc/blocks: append `_lt` suffix to LT files + classes |
 | 30 | `b27ea5f` | Phase 2 / Sprint 19 | systemc: VertexFetch cycle-accurate block (VF_ca) |
+| 31 | `aa4265a` | Phase 2 / Sprint 20 | systemc: ShaderCore cycle-accurate block (SC_ca) |
 
 ---
 
@@ -72,10 +73,11 @@ itself — `git show <sha>`.
     stencil_scissor}`
   - `conformance.{triangle_white, triangle_msaa, triangle_rgb}`
   - Skipped (Docker-only): `systemc.tlm_hello`,
-    `systemc.cp_ca`, `systemc.vf_ca`, `compiler.glsl_to_spv`
+    `systemc.cp_ca`, `systemc.vf_ca`, `systemc.sc_ca`,
+    `compiler.glsl_to_spv`
 - **ISA**: v1.1 frozen (MEM class bits + per-lane break formalised)
 - **TLM blocks**: 5 of 15 (CP / VF / SC / PA / RS) at Phase 1 LT;
-  **2** with Phase 2 cycle-accurate variants (CP, VF)
+  **3** with Phase 2 cycle-accurate variants (CP, VF, SC)
 - **Flavour-suffix convention**: file + class suffix indicates SystemC
   abstraction level — `_lt` (LT, b_transport) / `_at` (AT, future) /
   `_pv` (PV, future) / `_ca` (cycle-accurate, sc_signal+CTHREAD).
@@ -576,3 +578,30 @@ migration order in [`docs/phase2_kickoff.md`](phase2_kickoff.md).
   chain; CP_ca / VF_ca are sibling targets in the build but not yet
   wired together — waits for SC_ca in Sprint 20 so the chain can run
   end-to-end).
+
+## Sprint 20 — ShaderCore cycle-accurate(`aa4265a`)
+- **Done**:
+  - `shadercore_ca.{h,cpp}` — wraps `gpu::sim::execute` inside an
+    SC_CTHREAD synchronous to clk.pos(). Same Phase-2 wire shape as
+    CP/VF: upstream consumer + downstream producer, opaque
+    `uint64_t` data carrying a `ShaderJob*`.
+  - Per accepted job: read pointer, materialise ThreadState, run
+    ISA sim, write outputs back into `job->outputs`, forward the
+    same pointer downstream.
+  - Timing placeholder: 1 cycle / instruction. Crude but enough for
+    the chain to model some per-warp latency. Real warp scheduler +
+    pipe latencies (ALU 1c, SFU 6–10c, TMU 20+c) is Phase 2.x.
+  - Testbench `test_shadercore_ca.cpp` (Docker-only): assemble
+    `add o0, c0, c1`, build 3 ShaderJobs with different constants,
+    push through SC_ca, assert each job's `o0.x = c0.x + c1.x`.
+  - CMake adds `shadercore_ca.cpp` to gpu_systemc; new test target
+    `systemc.sc_ca`.
+- **Tests**: 17/17 non-SystemC still green; `gpu_systemc` lib
+  compiles with `-DGPU_BUILD_SYSTEMC=ON`. Test exe runs in Docker.
+- **Honest scope note**: this CA model is single-threaded (one
+  ShaderJob at a time, no warp scheduling). Real SC has 4 warp
+  slots × 16 lanes with per-pipe scoreboarding. The Sprint-20 model
+  is enough to validate the wire interface but not enough to model
+  perf accurately.
+- **Out of scope (next sprints)**: PA_ca, then top-level chain
+  CP_ca → VF_ca → SC_ca (now possible with the 3 CA blocks).
