@@ -454,6 +454,10 @@ void glPopClientAttrib(void);
 void glRotated(GLdouble angle, GLdouble x, GLdouble y, GLdouble z);
 void glTranslated(GLdouble x, GLdouble y, GLdouble z);
 void glScaled(GLdouble x, GLdouble y, GLdouble z);
+void glPolygonOffset(GLfloat factor, GLfloat units);
+#define GL_POLYGON_OFFSET_FILL  0x8037
+#define GL_POLYGON_OFFSET_LINE  0x2A02
+#define GL_POLYGON_OFFSET_POINT 0x2A01
 
 #define GL_LINEAR_MIPMAP_LINEAR  0x2703
 #define GL_LINEAR_MIPMAP_NEAREST 0x2701

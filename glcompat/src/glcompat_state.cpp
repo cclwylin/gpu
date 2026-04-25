@@ -437,5 +437,6 @@ void glTranslated(GLdouble x, GLdouble y, GLdouble z) {
 void glScaled(GLdouble x, GLdouble y, GLdouble z) {
     glScalef((GLfloat)x, (GLfloat)y, (GLfloat)z);
 }
+void glPolygonOffset(GLfloat, GLfloat) {}
 
 }   // extern "C"
