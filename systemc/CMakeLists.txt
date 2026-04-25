@@ -30,18 +30,18 @@ endif()
 message(STATUS "Found SystemC: ${SystemCLanguage_DIR}")
 
 add_library(gpu_systemc STATIC
-    blocks/cp/src/cp.cpp
-    blocks/sc/src/sc.cpp
-    blocks/vf/src/vf.cpp
-    blocks/pa/src/pa.cpp
+    blocks/commandprocessor/src/commandprocessor.cpp
+    blocks/shadercore/src/shadercore.cpp
+    blocks/vertexfetch/src/vertexfetch.cpp
+    blocks/primitiveassembly/src/primitiveassembly.cpp
     top/src/gpu_top.cpp
 )
 target_include_directories(gpu_systemc PUBLIC
     common/include
-    blocks/cp/include
-    blocks/sc/include
-    blocks/vf/include
-    blocks/pa/include
+    blocks/commandprocessor/include
+    blocks/shadercore/include
+    blocks/vertexfetch/include
+    blocks/primitiveassembly/include
     top/include)
 target_link_libraries(gpu_systemc PUBLIC SystemC::systemc gpu_compiler)
 # SystemC lib is a dylib on macOS; CMake may need the rpath.

@@ -1,4 +1,4 @@
-#include "gpu_systemc/pa_block.h"
+#include "gpu_systemc/primitiveassembly.h"
 
 namespace gpu::systemc {
 

@@ -1,4 +1,4 @@
-#include "gpu_systemc/cp_block.h"
+#include "gpu_systemc/commandprocessor.h"
 
 namespace gpu::systemc {
 

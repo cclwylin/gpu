@@ -1,4 +1,4 @@
-#include "gpu_systemc/vf_block.h"
+#include "gpu_systemc/vertexfetch.h"
 
 namespace gpu::systemc {
 

@@ -1,7 +1,7 @@
 ---
 doc: Progress Log
 purpose: Human-readable index of what shipped per commit, mapped to Master Plan milestones.
-last_updated: 2026-04-25 (Sprint 12)
+last_updated: 2026-04-25 (post-Sprint 12 refactor)
 ---
 
 # PROGRESS.md
@@ -45,6 +45,7 @@ itself — `git show <sha>`.
 | 16 | `a5e73ef` | Phase 1 / Sprint 10 | systemc: VF + PA blocks, CP→VF→SC chain |
 | 17 | `7f52a4c` | Phase 1 / Sprint 11 | conformance harness — scene-based CTest regression |
 | 18 | `968736f` | Phase 1 / Sprint 12 | glslang integration (gated; SPIR-V emit) |
+| 19 | `3ead419` | Phase 1 / refactor | systemc/blocks: rename abbrev → full names (cp→commandprocessor, …) |
 
 ---
 
@@ -343,3 +344,22 @@ finishing one track first.
   full GLSL → ISA replacement happens when that pass is in place; the
   current hand-written parser in `compiler/glsl/` keeps working until
   then.
+
+## Refactor — systemc/blocks/ name expansion(`3ead419`)
+- **Done**: All 15 block directories under `systemc/blocks/` renamed
+  from abbreviations to lowercase concatenated full names. Header /
+  source files in the four content-bearing blocks renamed to drop the
+  `<abbr>_block` prefix and use the full name (`cp_block.h` →
+  `commandprocessor.h`; `cp.cpp` → `commandprocessor.cpp`). Mapping:
+  `cp → commandprocessor, vf → vertexfetch, sc → shadercore,
+  pa → primitiveassembly, tb → tilebinner, rs → rasterizer,
+  tmu → textureunit, pfo → perfragmentops, tbf → tilebuffer,
+  rsv → resolveunit, mmu → memorymanagementunit, l2 → l2cache,
+  mc → memorycontroller, csr → controlstatusregister,
+  pmu → perfmonitorunit`. CMake source list, all `#include` paths,
+  `gpu_top.h`, and `systemc/blocks/README.md` updated to match.
+- **Tests**: 14/14 still green (both default and `-DGPU_BUILD_SYSTEMC=ON`
+  build paths). Class names (`CommandProcessor`, etc.) were already in
+  full form; only paths changed.
+- **Out of scope**: `docs/microarch/<abbr>.md` filenames left as-is
+  (those are spec stubs, not code; rename is cheap if asked later).

@@ -1,34 +1,36 @@
 # systemc/blocks/ — Per-Block SystemC Modules
 
-每個 block 一個子目錄。
+每個 block 一個子目錄。目錄名是該 block 的全名(no abbrev),C++ class
+名是同名 UpperCamelCase。
 
-| Dir | Block | Owner |
+| Dir | Block class | Owner |
 |---|---|---|
-| [cp/](cp/) | Command Processor | E1 |
-| [vf/](vf/) | Vertex Fetch | E1 |
-| [sc/](sc/) | Shader Core | E1 |
-| [pa/](pa/) | Primitive Assembly | E1 |
-| [tb/](tb/) | Tile Binner | E2 |
-| [rs/](rs/) | Rasterizer | E2 |
-| [tmu/](tmu/) | Texture Unit | E2 |
-| [pfo/](pfo/) | Per-Fragment Ops | E2 |
-| [tbf/](tbf/) | Tile Buffer | E2 |
-| [rsv/](rsv/) | Resolve Unit | E2 |
-| [mmu/](mmu/) | MMU | E1 |
-| [l2/](l2/) | L2 Cache | E1 |
-| [mc/](mc/) | Memory Controller | E1 |
-| [csr/](csr/) | CSR Block (APB slave) | E3 |
-| [pmu/](pmu/) | Perf Monitor Unit | E3 |
+| [commandprocessor/](commandprocessor/) | `CommandProcessor` | E1 |
+| [vertexfetch/](vertexfetch/) | `VertexFetch` | E1 |
+| [shadercore/](shadercore/) | `ShaderCore` | E1 |
+| [primitiveassembly/](primitiveassembly/) | `PrimitiveAssembly` | E1 |
+| [tilebinner/](tilebinner/) | `TileBinner` | E2 |
+| [rasterizer/](rasterizer/) | `Rasterizer` | E2 |
+| [textureunit/](textureunit/) | `TextureUnit` | E2 |
+| [perfragmentops/](perfragmentops/) | `PerFragmentOps` | E2 |
+| [tilebuffer/](tilebuffer/) | `TileBuffer` | E2 |
+| [resolveunit/](resolveunit/) | `ResolveUnit` | E2 |
+| [memorymanagementunit/](memorymanagementunit/) | `MemoryManagementUnit` | E1 |
+| [l2cache/](l2cache/) | `L2Cache` | E1 |
+| [memorycontroller/](memorycontroller/) | `MemoryController` | E1 |
+| [controlstatusregister/](controlstatusregister/) | `ControlStatusRegister` | E3 |
+| [perfmonitorunit/](perfmonitorunit/) | `PerfMonitorUnit` | E3 |
 
 ## 每個 block 子目錄結構(建議)
 ```
-<block>/
+<blockname>/
   README.md              role, interface, status
-  include/               public headers
-  src/                   implementation
+  include/gpu_systemc/<blockname>.h
+  src/<blockname>.cpp
   tb/                    block-level UVM-SystemC testbench
 ```
 
 ## 命名
-- module:`gpu::<block>::<ModuleName>`(C++ namespace + class UpperCamelCase)
-- port:`*_i` / `*_o` suffix
+- 目錄 / header / source 檔名:lowercase concatenated 全名(`commandprocessor`)
+- C++ class:同名 UpperCamelCase(`CommandProcessor`)
+- Port:`*_i` / `*_o` suffix

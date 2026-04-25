@@ -1,10 +1,10 @@
 #pragma once
 #include <systemc>
 
-#include "gpu_systemc/cp_block.h"
-#include "gpu_systemc/pa_block.h"
-#include "gpu_systemc/sc_block.h"
-#include "gpu_systemc/vf_block.h"
+#include "gpu_systemc/commandprocessor.h"
+#include "gpu_systemc/primitiveassembly.h"
+#include "gpu_systemc/shadercore.h"
+#include "gpu_systemc/vertexfetch.h"
 
 namespace gpu::systemc {
 

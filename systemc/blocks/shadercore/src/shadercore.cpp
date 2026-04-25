@@ -1,4 +1,4 @@
-#include "gpu_systemc/sc_block.h"
+#include "gpu_systemc/shadercore.h"
 
 #include <cstring>
 
