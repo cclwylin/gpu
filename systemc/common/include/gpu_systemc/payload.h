@@ -71,6 +71,18 @@ struct PfoJob {
     const gpu::Quad*  quad = nullptr;
 };
 
+// Sprint 27 MemRequest — virtual-address read/write request, passed
+// through MMU_ca → L2_ca → MC_ca. The MC owns the backing DRAM.
+//   - is_write=false: MC fills `data` with `size` bytes from addr
+//   - is_write=true:  MC writes `data` to addr
+struct MemRequest {
+    uint64_t              addr  = 0;     // virtual address
+    uint32_t              size  = 0;     // bytes
+    bool                  is_write = false;
+    std::vector<uint8_t>  data;          // r/w buffer (host-side)
+    bool                  fault    = false;   // set by MMU on translation miss
+};
+
 // Sprint 26 TileFlushJob — passes a tile-resident Context* through
 // TBF_ca (storage placeholder) and RSV_ca (gpu::pipeline::resolve
 // wrapper). Tile bbox is informational; the resolve operates on the
