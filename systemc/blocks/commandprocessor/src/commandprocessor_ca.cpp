@@ -1,8 +1,8 @@
-#include "gpu_systemc/commandprocessor_cycleaccurate.h"
+#include "gpu_systemc/commandprocessor_ca.h"
 
 namespace gpu::systemc {
 
-CommandProcessorCycleAccurate::CommandProcessorCycleAccurate(sc_core::sc_module_name name)
+CommandProcessorCa::CommandProcessorCa(sc_core::sc_module_name name)
     : sc_module(name),
       clk("clk"), rst_n("rst_n"),
       cmd_valid_o("cmd_valid_o"),
@@ -12,12 +12,12 @@ CommandProcessorCycleAccurate::CommandProcessorCycleAccurate(sc_core::sc_module_
     reset_signal_is(rst_n, false);
 }
 
-void CommandProcessorCycleAccurate::enqueue(void* job) {
+void CommandProcessorCa::enqueue(void* job) {
     queue_.push(job);
     event_.notify(sc_core::SC_ZERO_TIME);
 }
 
-void CommandProcessorCycleAccurate::thread() {
+void CommandProcessorCa::thread() {
     cmd_valid_o.write(false);
     cmd_data_o.write(0);
     while (true) {

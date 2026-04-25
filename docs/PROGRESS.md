@@ -68,7 +68,7 @@ itself — `git show <sha>`.
     stencil_scissor}`
   - `conformance.{triangle_white, triangle_msaa, triangle_rgb}`
   - Skipped (Docker-only): `systemc.tlm_hello`,
-    `systemc.commandprocessor_cycleaccurate`, `compiler.glsl_to_spv`
+    `systemc.cp_ca`, `compiler.glsl_to_spv`
 - **ISA**: v1.1 frozen (MEM class bits + per-lane break formalised)
 - **TLM blocks**: 5 of 15 (CP / VF / SC / PA / RS) at Phase 1 LT;
   CP additionally has Phase 2 cycle-accurate variant
@@ -483,7 +483,7 @@ finishing one track first.
 ## Phase 2 — Cycle-Accurate SystemC
 
 Master Plan Phase 2 spans M9–M16 (7 months). Each Phase-1 LT block
-gets a parallel `<blockname>_cycleaccurate.{h,cpp}` cycle-accurate
+gets a parallel `<blockname>_ca.{h,cpp}` cycle-accurate
 implementation; both flavours coexist; top-level CMake flag picks the
 build (Phase 2.x). Detailed plan + naming + handshake convention +
 migration order in [`docs/phase2_kickoff.md`](phase2_kickoff.md).
@@ -491,24 +491,24 @@ migration order in [`docs/phase2_kickoff.md`](phase2_kickoff.md).
 > **Note on terminology**: earlier internal shorthand used "PV" for
 > the cycle-accurate flavour. That was inaccurate ("PV" / Programmer's
 > View in OSCI taxonomy ≈ LT-equivalent). Renamed everywhere to
-> `_cycleaccurate` / `CommandProcessorCycleAccurate` /
-> `systemc.commandprocessor_cycleaccurate` for precision.
+> `_ca` / `CommandProcessorCa` /
+> `systemc.cp_ca` for precision.
 
 ## Sprint 18 — Phase 2 kickoff(`ca5db3b`)
 - **Done**:
-  - `commandprocessor_cycleaccurate.{h,cpp}` — first cycle-accurate
+  - `commandprocessor_ca.{h,cpp}` — first cycle-accurate
     block. SC_CTHREAD synchronous to `clk.pos()`, async-deassert
     reset via `reset_signal_is(rst_n, false)`. Wire-level interface:
     sc_in/out + ready/valid + 64-bit data signal. Same `enqueue()`
     driver-side API as the LT variant.
-  - `tb/test_commandprocessor_cycleaccurate.cpp` (`sc_main`):
+  - `tb/test_commandprocessor_ca.cpp` (`sc_main`):
     sc_clock @ 10 ns + tiny Sink consumer that always asserts ready
     and records data words. Enqueue 3 jobs, run, assert sink saw all
     3 with correct data.
   - `docs/phase2_kickoff.md`: full Phase 2 plan — coexistence pattern,
     sc_in/out + CTHREAD + ready/valid convention, Sprint 19–28
     migration order across the remaining 14 blocks, co-sim strategy
-    (`-DGPU_SYSTEMC_FLAVOR=lt|cycleaccurate` at top), exit criteria.
+    (`-DGPU_SYSTEMC_FLAVOR=lt|ca` at top), exit criteria.
 - **Tests**: 17/17 non-SystemC still green. `gpu_systemc` library
   compiles cleanly with the cycle-accurate CP added; testbench runs
   in Docker.

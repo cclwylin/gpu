@@ -21,7 +21,7 @@ namespace gpu::systemc {
 //   - same payload structs as the LT model, just framed differently
 //
 // See docs/phase2_kickoff.md for the full migration plan.
-SC_MODULE(CommandProcessorCycleAccurate) {
+SC_MODULE(CommandProcessorCa) {
     sc_core::sc_in<bool>  clk;
     sc_core::sc_in<bool>  rst_n;
 
@@ -32,8 +32,8 @@ SC_MODULE(CommandProcessorCycleAccurate) {
     sc_core::sc_in<bool>      cmd_ready_i;
     sc_core::sc_out<uint64_t> cmd_data_o;     // stand-in for payload addr
 
-    SC_HAS_PROCESS(CommandProcessorCycleAccurate);
-    explicit CommandProcessorCycleAccurate(sc_core::sc_module_name name);
+    SC_HAS_PROCESS(CommandProcessorCa);
+    explicit CommandProcessorCa(sc_core::sc_module_name name);
 
     // Driver-side enqueue, mirrors the LT version's API.
     void enqueue(void* job);

@@ -12,21 +12,21 @@ Master Plan Phase 2 spans M9–M16 (7 months). Goal: every TLM-LT block
 graduates to a **cycle-accurate / pin-level / synthesizable-subset**
 SystemC implementation. The Phase 1 LT blocks remain in tree for
 spec-vs-impl co-simulation; Phase 2 blocks add a parallel
-`*_cycleaccurate.{h,cpp}` per block behind a CMake option.
+`*_ca.{h,cpp}` per block behind a CMake option.
 
 > **Glossary note**: in OSCI / Accellera taxonomy "PV" (Programmer's
 > View) ≈ LT-equivalent. The Phase-2 work targeted here is strictly
 > **CA — Cycle-Accurate** (sc_in/out + SC_CTHREAD + clk + ready/valid).
-> We use `_cycleaccurate` in filenames to be precise. AT (Approximately-
+> We use `_ca` in filenames to be precise. AT (Approximately-
 > Timed, TLM-2.0 nb_transport with phases) is a separate intermediate
 > abstraction we are NOT pursuing.
 
 This Sprint-18 commit lays the **template** with one block (CP):
 
-- `commandprocessor_cycleaccurate.{h,cpp}` — `SC_CTHREAD` driven by
+- `commandprocessor_ca.{h,cpp}` — `SC_CTHREAD` driven by
   clk + rst_n, ready/valid handshake on the downstream interface,
   no TLM blocking calls.
-- Testbench (`test_commandprocessor_cycleaccurate.cpp`) exercises the
+- Testbench (`test_commandprocessor_ca.cpp`) exercises the
   handshake against a tiny `Sink` consumer.
 
 ## Naming + layout convention
@@ -34,9 +34,9 @@ This Sprint-18 commit lays the **template** with one block (CP):
 ```
 systemc/blocks/<blockname>/
   include/gpu_systemc/<blockname>.h                    Phase 1  (TLM-LT, b_transport)
-  include/gpu_systemc/<blockname>_cycleaccurate.h      Phase 2  (CA, sc_signal + CTHREAD)
+  include/gpu_systemc/<blockname>_ca.h      Phase 2  (CA, sc_signal + CTHREAD)
   src/<blockname>.cpp
-  src/<blockname>_cycleaccurate.cpp
+  src/<blockname>_ca.cpp
 ```
 
 Both flavours coexist; the top-level instantiates one or the other
@@ -89,7 +89,7 @@ Each sprint converts the named block from TLM-LT to cycle-accurate.
 
 - Each block has both LT and cycle-accurate implementations.
 - Top-level CMake flag selects the build
-  (`-DGPU_SYSTEMC_FLAVOR=lt|cycleaccurate`).
+  (`-DGPU_SYSTEMC_FLAVOR=lt|ca`).
 - Reference runs (sw_ref ↔ TLM-LT framebuffer pixel-exact) are the
   Phase-1 invariant. The cycle-accurate chip must produce identical
   pixels to LT chip on the conformance corpus, plus pass cycle-count

@@ -1,6 +1,6 @@
 // Sprint 18 — Phase 2 kickoff: cycle-accurate CP smoke.
 //
-// Drives the new CommandProcessorCycleAccurate with a simple valid/ready receiver,
+// Drives the new CommandProcessorCa with a simple valid/ready receiver,
 // asserts each enqueued job appears on the cmd_data_o port within a
 // bounded number of cycles, then ready handshakes to consume.
 
@@ -8,7 +8,7 @@
 #include <queue>
 #include <systemc>
 
-#include "gpu_systemc/commandprocessor_cycleaccurate.h"
+#include "gpu_systemc/commandprocessor_ca.h"
 
 using namespace gpu::systemc;
 
@@ -43,7 +43,7 @@ int sc_main(int /*argc*/, char** /*argv*/) {
     sc_core::sc_signal<bool>    ready;
     sc_core::sc_signal<uint64_t> data;
 
-    CommandProcessorCycleAccurate cp("cp");
+    CommandProcessorCa cp("cp");
     Sink              sink("sink");
 
     cp.clk(clk);          cp.rst_n(rst_n);

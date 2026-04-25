@@ -31,7 +31,7 @@ message(STATUS "Found SystemC: ${SystemCLanguage_DIR}")
 
 add_library(gpu_systemc STATIC
     blocks/commandprocessor/src/commandprocessor.cpp
-    blocks/commandprocessor/src/commandprocessor_cycleaccurate.cpp
+    blocks/commandprocessor/src/commandprocessor_ca.cpp
     blocks/shadercore/src/shadercore.cpp
     blocks/vertexfetch/src/vertexfetch.cpp
     blocks/primitiveassembly/src/primitiveassembly.cpp
@@ -70,11 +70,11 @@ if(GPU_BUILD_TESTS)
             BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
         add_test(NAME systemc.tlm_hello COMMAND test_tlm_hello)
 
-        add_executable(test_commandprocessor_cycleaccurate tb/test_commandprocessor_cycleaccurate.cpp)
-        target_link_libraries(test_commandprocessor_cycleaccurate PRIVATE gpu_systemc)
-        set_target_properties(test_commandprocessor_cycleaccurate PROPERTIES
+        add_executable(test_commandprocessor_ca tb/test_commandprocessor_ca.cpp)
+        target_link_libraries(test_commandprocessor_ca PRIVATE gpu_systemc)
+        set_target_properties(test_commandprocessor_ca PROPERTIES
             INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
             BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
-        add_test(NAME systemc.commandprocessor_cycleaccurate COMMAND test_commandprocessor_cycleaccurate)
+        add_test(NAME systemc.cp_ca COMMAND test_commandprocessor_ca)
     endif()
 endif()
