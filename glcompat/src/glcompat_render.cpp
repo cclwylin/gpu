@@ -324,6 +324,27 @@ void save_scene() {
     f << "width  " << W << "\n";
     f << "height " << H << "\n";
     f << "msaa   " << (s.ctx.fb.msaa_4x ? 1 : 0) << "\n";
+    // Render-state capture so scene_runner / sc_pattern_runner can
+    // reproduce glcompat's exact framebuffer (closes the cube /
+    // dinoshade / etc. RMSE gap from "no depth test on the SC side").
+    f << "depth_test  " << (s.depth_test ? 1 : 0) << "\n";
+    f << "depth_write " << (s.depth_write ? 1 : 0) << "\n";
+    auto df = [&]() {
+        switch (s.depth_func) {
+            case GL_NEVER:    return "never";
+            case GL_LESS:     return "less";
+            case GL_LEQUAL:   return "lequal";
+            case GL_EQUAL:    return "equal";
+            case GL_GEQUAL:   return "gequal";
+            case GL_GREATER:  return "greater";
+            case GL_NOTEQUAL: return "notequal";
+            case GL_ALWAYS:   return "always";
+            default:          return "less";
+        }
+    };
+    f << "depth_func  " << df() << "\n";
+    f << "cull_back   " << (s.cull_face && s.cull_mode == GL_BACK ? 1 : 0) << "\n";
+    f << "blend       " << (s.blend ? 1 : 0) << "\n";
     auto to_u8 = [](float v) {
         if (v <= 0.0f) return 0u;
         if (v >= 1.0f) return 255u;

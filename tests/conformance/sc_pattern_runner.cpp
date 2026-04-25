@@ -51,6 +51,11 @@ struct Scene {
     uint32_t clear_rgba = 0;
     std::vector<gpu::Vec4f> positions;
     std::vector<gpu::Vec4f> colours;
+    bool depth_test = false;
+    bool depth_write = true;
+    std::string depth_func = "less";
+    bool cull_back = false;
+    bool blend = false;
 };
 
 bool parse_scene(const std::string& path, Scene& s, std::string& err) {
@@ -78,6 +83,11 @@ bool parse_scene(const std::string& path, Scene& s, std::string& err) {
         else if (key == "msaa")   { int v; is >> v; s.msaa = (v != 0); }
         else if (key == "clear")  { uint32_t v; is >> std::hex >> v >> std::dec; s.clear_rgba = v; }
         else if (key == "verts")  in_verts = true;
+        else if (key == "depth_test")  { int v; is >> v; s.depth_test  = v != 0; }
+        else if (key == "depth_write") { int v; is >> v; s.depth_write = v != 0; }
+        else if (key == "depth_func")  { is >> s.depth_func; }
+        else if (key == "cull_back")   { int v; is >> v; s.cull_back   = v != 0; }
+        else if (key == "blend")       { int v; is >> v; s.blend       = v != 0; }
         // unknown keys silently ignored — some belong to scene_runner only
     }
     if (s.positions.size() % 3 != 0 || s.positions.empty()) {
@@ -219,10 +229,24 @@ int sc_main(int argc, char** argv) {
     if (scene.msaa)
         ctx.fb.color_samples.assign(scene.width * scene.height * 4,
                                     scene.clear_rgba);
-    ctx.draw.depth_test = false;
-    ctx.draw.depth_write = false;
+    ctx.draw.depth_test  = scene.depth_test;
+    ctx.draw.depth_write = scene.depth_write;
+    if (scene.depth_test && ctx.fb.depth.empty())
+        ctx.fb.depth.assign((size_t)scene.width * scene.height, 1.0f);
+    {
+        using DF = gpu::DrawState;
+        if      (scene.depth_func == "never")    ctx.draw.depth_func = DF::DF_NEVER;
+        else if (scene.depth_func == "less")     ctx.draw.depth_func = DF::DF_LESS;
+        else if (scene.depth_func == "lequal")   ctx.draw.depth_func = DF::DF_LEQUAL;
+        else if (scene.depth_func == "equal")    ctx.draw.depth_func = DF::DF_EQUAL;
+        else if (scene.depth_func == "gequal")   ctx.draw.depth_func = DF::DF_GEQUAL;
+        else if (scene.depth_func == "greater")  ctx.draw.depth_func = DF::DF_GREATER;
+        else if (scene.depth_func == "notequal") ctx.draw.depth_func = DF::DF_NOTEQUAL;
+        else if (scene.depth_func == "always")   ctx.draw.depth_func = DF::DF_ALWAYS;
+    }
+    ctx.draw.cull_back    = scene.cull_back;
     ctx.draw.stencil_test = false;
-    ctx.draw.blend_enable = false;
+    ctx.draw.blend_enable = scene.blend;
     rs_pfo.ctx = &ctx;
 
     sc_pa.batch_size = 3;
