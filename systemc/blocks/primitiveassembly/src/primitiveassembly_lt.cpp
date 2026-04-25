@@ -1,4 +1,4 @@
-#include "gpu_systemc/primitiveassembly.h"
+#include "gpu_systemc/primitiveassembly_lt.h"
 
 namespace gpu::systemc {
 
@@ -33,12 +33,12 @@ bool back_face_cull(const gpu::sim::Vec4& a,
 
 }  // namespace
 
-PrimitiveAssembly::PrimitiveAssembly(sc_core::sc_module_name name)
+PrimitiveAssemblyLt::PrimitiveAssemblyLt(sc_core::sc_module_name name)
     : sc_module(name), target("target") {
-    target.register_b_transport(this, &PrimitiveAssembly::b_transport);
+    target.register_b_transport(this, &PrimitiveAssemblyLt::b_transport);
 }
 
-void PrimitiveAssembly::b_transport(tlm::tlm_generic_payload& trans,
+void PrimitiveAssemblyLt::b_transport(tlm::tlm_generic_payload& trans,
                                     sc_core::sc_time& delay) {
     auto* job = reinterpret_cast<PrimAssemblyJob*>(trans.get_data_ptr());
     if (!job) {

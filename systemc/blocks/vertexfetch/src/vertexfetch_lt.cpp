@@ -1,13 +1,13 @@
-#include "gpu_systemc/vertexfetch.h"
+#include "gpu_systemc/vertexfetch_lt.h"
 
 namespace gpu::systemc {
 
-VertexFetch::VertexFetch(sc_core::sc_module_name name)
+VertexFetchLt::VertexFetchLt(sc_core::sc_module_name name)
     : sc_module(name), target("target"), initiator("initiator") {
-    target.register_b_transport(this, &VertexFetch::b_transport);
+    target.register_b_transport(this, &VertexFetchLt::b_transport);
 }
 
-void VertexFetch::b_transport(tlm::tlm_generic_payload& trans,
+void VertexFetchLt::b_transport(tlm::tlm_generic_payload& trans,
                               sc_core::sc_time& delay) {
     auto* job = reinterpret_cast<VertexFetchJob*>(trans.get_data_ptr());
     if (!job || !job->vs_code) {

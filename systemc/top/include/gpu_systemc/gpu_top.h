@@ -1,11 +1,11 @@
 #pragma once
 #include <systemc>
 
-#include "gpu_systemc/commandprocessor.h"
-#include "gpu_systemc/primitiveassembly.h"
-#include "gpu_systemc/rasterizer.h"
-#include "gpu_systemc/shadercore.h"
-#include "gpu_systemc/vertexfetch.h"
+#include "gpu_systemc/commandprocessor_lt.h"
+#include "gpu_systemc/primitiveassembly_lt.h"
+#include "gpu_systemc/rasterizer_lt.h"
+#include "gpu_systemc/shadercore_lt.h"
+#include "gpu_systemc/vertexfetch_lt.h"
 
 namespace gpu::systemc {
 
@@ -15,11 +15,11 @@ namespace gpu::systemc {
 // Phase 1.x will splice CP through PA and RS once the dispatch logic in CP
 // can handle multi-stage commands.
 SC_MODULE(GpuTop) {
-    CommandProcessor   cp;
-    VertexFetch        vf;
-    ShaderCore         sc;
-    PrimitiveAssembly  pa;
-    Rasterizer         rs;
+    CommandProcessorLt   cp;
+    VertexFetchLt        vf;
+    ShaderCoreLt         sc;
+    PrimitiveAssemblyLt  pa;
+    RasterizerLt         rs;
 
     SC_HAS_PROCESS(GpuTop);
     explicit GpuTop(sc_core::sc_module_name name);

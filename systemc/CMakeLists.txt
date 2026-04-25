@@ -30,12 +30,12 @@ endif()
 message(STATUS "Found SystemC: ${SystemCLanguage_DIR}")
 
 add_library(gpu_systemc STATIC
-    blocks/commandprocessor/src/commandprocessor.cpp
+    blocks/commandprocessor/src/commandprocessor_lt.cpp
     blocks/commandprocessor/src/commandprocessor_ca.cpp
-    blocks/shadercore/src/shadercore.cpp
-    blocks/vertexfetch/src/vertexfetch.cpp
-    blocks/primitiveassembly/src/primitiveassembly.cpp
-    blocks/rasterizer/src/rasterizer.cpp
+    blocks/shadercore/src/shadercore_lt.cpp
+    blocks/vertexfetch/src/vertexfetch_lt.cpp
+    blocks/primitiveassembly/src/primitiveassembly_lt.cpp
+    blocks/rasterizer/src/rasterizer_lt.cpp
     top/src/gpu_top.cpp
 )
 target_include_directories(gpu_systemc PUBLIC

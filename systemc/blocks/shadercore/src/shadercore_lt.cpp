@@ -1,15 +1,15 @@
-#include "gpu_systemc/shadercore.h"
+#include "gpu_systemc/shadercore_lt.h"
 
 #include <cstring>
 
 namespace gpu::systemc {
 
-ShaderCore::ShaderCore(sc_core::sc_module_name name)
+ShaderCoreLt::ShaderCoreLt(sc_core::sc_module_name name)
     : sc_module(name), target("target") {
-    target.register_b_transport(this, &ShaderCore::b_transport);
+    target.register_b_transport(this, &ShaderCoreLt::b_transport);
 }
 
-void ShaderCore::b_transport(tlm::tlm_generic_payload& trans,
+void ShaderCoreLt::b_transport(tlm::tlm_generic_payload& trans,
                              sc_core::sc_time& delay) {
     // The job pointer is carried via the payload's data_ptr. This is a
     // Sprint-5 shortcut; real impl will use TLM extensions.

@@ -12,11 +12,11 @@ namespace gpu::systemc {
 // each as a b_transport. Sprint 10: payload is opaque (void*) so CP can
 // front any downstream block (was ShaderJob* in Sprint 5; now VertexFetchJob*
 // once CP is bound to VF, but CP is agnostic).
-SC_MODULE(CommandProcessor) {
-    tlm_utils::simple_initiator_socket<CommandProcessor> initiator;
+SC_MODULE(CommandProcessorLt) {
+    tlm_utils::simple_initiator_socket<CommandProcessorLt> initiator;
 
-    SC_HAS_PROCESS(CommandProcessor);
-    explicit CommandProcessor(sc_core::sc_module_name name);
+    SC_HAS_PROCESS(CommandProcessorLt);
+    explicit CommandProcessorLt(sc_core::sc_module_name name);
 
     void enqueue(void* job);
 

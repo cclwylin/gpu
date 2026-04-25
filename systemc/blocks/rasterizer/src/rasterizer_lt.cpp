@@ -1,4 +1,4 @@
-#include "gpu_systemc/rasterizer.h"
+#include "gpu_systemc/rasterizer_lt.h"
 
 #include <algorithm>
 #include <cmath>
@@ -21,12 +21,12 @@ inline float edge_fn(float ax, float ay, float bx, float by, float px, float py)
 
 }  // namespace
 
-Rasterizer::Rasterizer(sc_core::sc_module_name name)
+RasterizerLt::RasterizerLt(sc_core::sc_module_name name)
     : sc_module(name), target("target") {
-    target.register_b_transport(this, &Rasterizer::b_transport);
+    target.register_b_transport(this, &RasterizerLt::b_transport);
 }
 
-void Rasterizer::b_transport(tlm::tlm_generic_payload& trans,
+void RasterizerLt::b_transport(tlm::tlm_generic_payload& trans,
                              sc_core::sc_time& delay) {
     auto* job = reinterpret_cast<RasterJob*>(trans.get_data_ptr());
     if (!job) {

@@ -31,16 +31,22 @@ This Sprint-18 commit lays the **template** with one block (CP):
 
 ## Naming + layout convention
 
+Both flavours coexist; the top-level instantiates one or the other
+based on a CMake flag (Phase 2.x). File / class suffix maps to the
+SystemC abstraction level:
+
 ```
 systemc/blocks/<blockname>/
-  include/gpu_systemc/<blockname>.h                    Phase 1  (TLM-LT, b_transport)
-  include/gpu_systemc/<blockname>_ca.h      Phase 2  (CA, sc_signal + CTHREAD)
-  src/<blockname>.cpp
+  include/gpu_systemc/<blockname>_lt.h    Phase 1  TLM-LT       (b_transport)
+  include/gpu_systemc/<blockname>_at.h    (future) TLM-AT       (nb_transport+phases)
+  include/gpu_systemc/<blockname>_pv.h    (future) PV           (untimed programmer's view)
+  include/gpu_systemc/<blockname>_ca.h    Phase 2  cycle-accurate (sc_signal + CTHREAD)
+  src/<blockname>_lt.cpp
   src/<blockname>_ca.cpp
 ```
 
-Both flavours coexist; the top-level instantiates one or the other
-based on a CMake flag (Phase 2.x).
+Class names mirror the file suffix: `CommandProcessorLt`,
+`CommandProcessorCa`, etc.
 
 ## Wire-level convention (template)
 

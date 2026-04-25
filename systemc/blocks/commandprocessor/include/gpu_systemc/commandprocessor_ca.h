@@ -8,7 +8,7 @@ namespace gpu::systemc {
 
 // Sprint 18 — Phase 2 kickoff: cycle-accurate, pin-level CP.
 //
-// Coexists with the Phase-1 CommandProcessor (TLM-LT, b_transport based).
+// Coexists with the Phase-1 CommandProcessorLt (TLM-LT, b_transport based).
 // This PV-style block uses sc_signal ports + a clocked SC_CTHREAD so the
 // downstream block (in this first slice, just a buffered "FIFO sink" for
 // integration testing) sees one transaction per cycle on a ready/valid

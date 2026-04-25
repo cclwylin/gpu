@@ -5,12 +5,12 @@
 
 | Dir | Block class | Owner |
 |---|---|---|
-| [commandprocessor/](commandprocessor/) | `CommandProcessor` | E1 |
-| [vertexfetch/](vertexfetch/) | `VertexFetch` | E1 |
-| [shadercore/](shadercore/) | `ShaderCore` | E1 |
-| [primitiveassembly/](primitiveassembly/) | `PrimitiveAssembly` | E1 |
+| [commandprocessor/](commandprocessor/) | `CommandProcessorLt` | E1 |
+| [vertexfetch/](vertexfetch/) | `VertexFetchLt` | E1 |
+| [shadercore/](shadercore/) | `ShaderCoreLt` | E1 |
+| [primitiveassembly/](primitiveassembly/) | `PrimitiveAssemblyLt` | E1 |
 | [tilebinner/](tilebinner/) | `TileBinner` | E2 |
-| [rasterizer/](rasterizer/) | `Rasterizer` | E2 |
+| [rasterizer/](rasterizer/) | `RasterizerLt` | E2 |
 | [textureunit/](textureunit/) | `TextureUnit` | E2 |
 | [perfragmentops/](perfragmentops/) | `PerFragmentOps` | E2 |
 | [tilebuffer/](tilebuffer/) | `TileBuffer` | E2 |
@@ -32,5 +32,5 @@
 
 ## 命名
 - 目錄 / header / source 檔名:lowercase concatenated 全名(`commandprocessor`)
-- C++ class:同名 UpperCamelCase(`CommandProcessor`)
+- C++ class:同名 UpperCamelCase(`CommandProcessorLt`)
 - Port:`*_i` / `*_o` suffix

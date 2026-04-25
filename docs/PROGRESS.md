@@ -1,7 +1,7 @@
 ---
 doc: Progress Log
 purpose: Human-readable index of what shipped per commit, mapped to Master Plan milestones.
-last_updated: 2026-04-25 (Sprint 18 — Phase 2 kickoff)
+last_updated: 2026-04-25 (post-Sprint 18 + flavour-suffix refactor)
 ---
 
 # PROGRESS.md
@@ -53,6 +53,9 @@ itself — `git show <sha>`.
 | 24 | `619884c` | Phase 1 / Sprint 16  | sw_ref/fp: first cut at HW-aligned transcendentals |
 | 25 | `6eea98c` | Phase 1 / Sprint 17  | sw_ref: stencil + scissor + alpha-to-coverage |
 | 26 | `ca5db3b` | Phase 2 / Sprint 18  | Phase 2 kickoff — CP cycle-accurate template |
+| 27 | `ff512c2` | refactor             | rename `_pv` → `_cycleaccurate` (precision; later reverted) |
+| 28 | `d669695` | refactor             | revert `_cycleaccurate` → `_ca` (concise abbrev policy) |
+| 29 | `87f1cb9` | refactor          | systemc/blocks: append `_lt` suffix to LT files + classes |
 
 ---
 
@@ -72,6 +75,12 @@ itself — `git show <sha>`.
 - **ISA**: v1.1 frozen (MEM class bits + per-lane break formalised)
 - **TLM blocks**: 5 of 15 (CP / VF / SC / PA / RS) at Phase 1 LT;
   CP additionally has Phase 2 cycle-accurate variant
+- **Flavour-suffix convention**: file + class suffix indicates SystemC
+  abstraction level — `_lt` (LT, b_transport) / `_at` (AT, future) /
+  `_pv` (PV, future) / `_ca` (cycle-accurate, sc_signal+CTHREAD).
+  All current LT blocks live at `<block>_lt.{h,cpp}` with classes
+  `<Block>Lt`; the lone CA block is `commandprocessor_ca.{h,cpp}` /
+  `CommandProcessorCa`.
 - **Optional gates**: `-DGPU_BUILD_SYSTEMC=ON` (TLM chain +
   cycle-accurate CP), `-DGPU_BUILD_GLSLANG=ON` (glslang FetchContent,
   GLSL → SPIR-V)
@@ -332,7 +341,7 @@ finishing one track first.
 
 ## Sprint 10 — TLM blocks: VF + PA(`a5e73ef`)
 - **Done**:
-  - `VertexFetch` (TLM target+initiator) and `PrimitiveAssembly` (TLM
+  - `VertexFetchLt` (TLM target+initiator) and `PrimitiveAssemblyLt` (TLM
     target).
   - CP made generic (`enqueue(void*)`); existing `ShaderJob*` direct
     submission replaced by VF-driven `VertexFetchJob*`.
@@ -388,7 +397,7 @@ finishing one track first.
   pmu → perfmonitorunit`. CMake source list, all `#include` paths,
   `gpu_top.h`, and `systemc/blocks/README.md` updated to match.
 - **Tests**: 14/14 still green (both default and `-DGPU_BUILD_SYSTEMC=ON`
-  build paths). Class names (`CommandProcessor`, etc.) were already in
+  build paths). Class names (`CommandProcessorLt`, etc.) were already in
   full form; only paths changed.
 - **Out of scope**: `docs/microarch/<abbr>.md` filenames left as-is
   (those are spec stubs, not code; rename is cheap if asked later).
@@ -517,3 +526,29 @@ migration order in [`docs/phase2_kickoff.md`](phase2_kickoff.md).
   variants. Top-level chain doesn't yet route through the
   cycle-accurate CP (waits for at least one downstream cycle-accurate
   block — Sprint 19).
+
+## Refactor — flavour-suffix convention(`87f1cb9`)
+- **Done**: append `_lt` to all 5 existing TLM-LT block files and
+  classes for full alignment with the `_ca` / future `_pv` / `_at`
+  policy.
+  - File renames (10 total via `git mv`):
+    `commandprocessor.{h,cpp}` → `commandprocessor_lt.{h,cpp}` and
+    same shape for `shadercore`, `vertexfetch`, `primitiveassembly`,
+    `rasterizer`.
+  - Class renames (word-boundary regex to avoid colliding with
+    `CommandProcessorCa`): `CommandProcessor` → `CommandProcessorLt`,
+    `VertexFetch` → `VertexFetchLt`, `ShaderCore` → `ShaderCoreLt`,
+    `PrimitiveAssembly` → `PrimitiveAssemblyLt`, `Rasterizer` →
+    `RasterizerLt`.
+  - All `#include "gpu_systemc/<block>.h"` updated to `<block>_lt.h`
+    in `gpu_top.h`, the rasterizer `_ca` cousin, and tb files.
+  - `systemc/CMakeLists.txt` source list updated.
+  - `systemc/blocks/README.md` index table now lists `*Lt` class
+    names for the 5 with implementations; the 11 placeholders stay
+    at full-name (no flavour committed yet).
+  - Docs: `phase2_kickoff.md` naming convention block redrawn with
+    `_lt / _at / _pv / _ca` four-flavour layout. Descriptive prose
+    references to "Rasterizer" (the block, not the class) reverted
+    where the perl rewrite swept them up.
+- **Tests**: 17/17 still green; `gpu_systemc` lib compiles with
+  `-DGPU_BUILD_SYSTEMC=ON`.

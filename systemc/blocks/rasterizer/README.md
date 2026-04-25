@@ -1,4 +1,4 @@
-# RS — Rasterizer(MSAA-aware)
+# RS — RasterizerLt(MSAA-aware)
 
 **Role**:Edge function evaluation,產生 per-pixel coverage mask(4-bit for 4× MSAA)。
 

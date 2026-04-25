@@ -1,18 +1,18 @@
-#include "gpu_systemc/commandprocessor.h"
+#include "gpu_systemc/commandprocessor_lt.h"
 
 namespace gpu::systemc {
 
-CommandProcessor::CommandProcessor(sc_core::sc_module_name name)
+CommandProcessorLt::CommandProcessorLt(sc_core::sc_module_name name)
     : sc_module(name), initiator("initiator") {
     SC_THREAD(thread);
 }
 
-void CommandProcessor::enqueue(void* job) {
+void CommandProcessorLt::enqueue(void* job) {
     queue_.push(job);
     event_.notify(sc_core::SC_ZERO_TIME);
 }
 
-void CommandProcessor::thread() {
+void CommandProcessorLt::thread() {
     while (true) {
         if (queue_.empty()) wait(event_);
         while (!queue_.empty()) {
