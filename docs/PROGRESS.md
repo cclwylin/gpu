@@ -1,7 +1,7 @@
 ---
 doc: Progress Log
 purpose: Human-readable index of what shipped per commit, mapped to Master Plan milestones.
-last_updated: 2026-04-25 (post-Sprint 12 refactor + microarch rename)
+last_updated: 2026-04-25 (Sprint 18 — Phase 2 kickoff)
 ---
 
 # PROGRESS.md
@@ -46,21 +46,33 @@ itself — `git show <sha>`.
 | 17 | `7f52a4c` | Phase 1 / Sprint 11 | conformance harness — scene-based CTest regression |
 | 18 | `968736f` | Phase 1 / Sprint 12 | glslang integration (gated; SPIR-V emit) |
 | 19 | `3ead419` | Phase 1 / refactor | systemc/blocks: rename abbrev → full names (cp→commandprocessor, …) |
-| 20 | `e00d78c` | Phase 1 / refactor | docs/microarch: same rename applied to spec stub filenames |
+| 20 | `e00d78c` | Phase 1 / refactor   | docs/microarch: same rename applied to spec stub filenames |
+| 21 | `a7ae47b` | Phase 1 / Sprint 13  | compiler/spv: minimal SPIR-V → ISA lowering |
+| 22 | `4960797` | Phase 1 / Sprint 14  | systemc: Rasterizer as TLM block (RS) |
+| 23 | `142bd77` | Phase 1 / Sprint 15  | conformance harness — golden PPM RMSE diff |
+| 24 | `619884c` | Phase 1 / Sprint 16  | sw_ref/fp: first cut at HW-aligned transcendentals |
+| 25 | `6eea98c` | Phase 1 / Sprint 17  | sw_ref: stencil + scissor + alpha-to-coverage |
+| 26 | `ca5db3b` | Phase 2 / Sprint 18  | Phase 2 kickoff — CP cycle-accurate PV template |
 
 ---
 
 ## Status snapshot
 
-- **Master Plan phase**: Phase 1 (Three-Track Parallel)
-- **Tests passing**: 14/14 (CTest, local macOS / GCC-15)
-  - `compiler.{asm_roundtrip, sim_basic, glsl_compile, sim_warp, warp_break, glsl_ext}`
-  - `sw_ref.{basic, fp, isa_triangle, msaa, texture, pfo}`
-  - `conformance.{triangle_white, triangle_msaa}`
-  - Skipped (Docker-only): `systemc.tlm_hello`, `compiler.glsl_to_spv`
+- **Master Plan phase**: **Phase 2 kickoff** (Sprint 18 lands first PV
+  cycle-accurate template; Phase 1 LT chain still the production path)
+- **Tests passing**: 17/17 (CTest, local macOS / GCC-15)
+  - `compiler.{asm_roundtrip, sim_basic, glsl_compile, sim_warp,
+    warp_break, glsl_ext, spv_lower}`
+  - `sw_ref.{basic, fp, isa_triangle, msaa, texture, pfo,
+    stencil_scissor}`
+  - `conformance.{triangle_white, triangle_msaa, triangle_rgb}`
+  - Skipped (Docker-only): `systemc.tlm_hello`, `systemc.cp_pv`,
+    `compiler.glsl_to_spv`
 - **ISA**: v1.1 frozen (MEM class bits + per-lane break formalised)
-- **Optional gates**: `-DGPU_BUILD_SYSTEMC=ON` (TLM CP→VF→SC + PA),
-  `-DGPU_BUILD_GLSLANG=ON` (FetchContent glslang, GLSL → SPIR-V CLI)
+- **TLM blocks**: 5 of 15 (CP / VF / SC / PA / RS) at Phase 1 LT;
+  CP additionally has Phase 2 PV variant
+- **Optional gates**: `-DGPU_BUILD_SYSTEMC=ON` (TLM chain + PV CP),
+  `-DGPU_BUILD_GLSLANG=ON` (glslang FetchContent, GLSL → SPIR-V)
 - **Repo**: https://github.com/cclwylin/gpu (SSH origin)
 
 ---
@@ -258,23 +270,37 @@ finishing one track first.
 
 | Topic | Notes |
 |---|---|
-| **PFO depth/stencil/blend** | Currently PFO writes color directly. ES 2.0 needs depth test, stencil ops, blend equations. |
-| **More TLM blocks** | Only CP + SC exist in TLM. Need VF / PA / RS / TMU / PFO / TBF / RSV / MMU / L2 / MC / CSR / PMU. |
-| **GLSL frontend expansion** | Sprint 2 covers ref_shader_1 patterns. ref_shader_2 (Phong) needs `dot`/`normalize`/`pow`/`max`. ref_shader_3 needs `if`/`for`/`discard`. |
-| **Conformance harness** | dEQP / ES 2.0 CTS subset wired to CI. |
-| **glslang integration** | Replace hand-written GLSL parser with glslang → SPIR-V → IR. Architecture already designed for this swap. |
-| **Per-block microarch** | 15 microarch docs are draft v0.1. Will iterate as TLM blocks land. |
+| **Phase 2: 14 remaining blocks → PV** | Sprint 18 landed CP PV template. Sprints 19–28 walk it across VF / SC / PA / RS / TMU / PFO / TBF / RSV / MMU / L2 / MC / CSR / PMU per `docs/phase2_kickoff.md`. |
+| **TMU + L1 Tex$ (TLM)** | Phase-1 LT side: TMU still missing as a SystemC block (only sw_ref texture path exists). |
+| **PFO / TBF / RSV (TLM)** | Same — TLM-LT counterparts not yet written. |
+| **MMU / L2 / MC / CSR / PMU (TLM)** | Memory subsystem + sidebands. |
+| **CP multi-stage dispatch** | CP currently fronts only one downstream initiator (VF in LT chain). Real CP needs to route per-cmd to PA / RS / TMU /PFO. |
+| **SPIR-V → IR coverage** | Sprint 13 covers `mat4 * vec4` patterns. Need OpExtInst (GLSL.std.450), OpAccessChain, OpVectorShuffle, OpDot, OpImageSampleImplicitLod, control flow. |
+| **glslang → SPIR-V → ISA end-to-end** | Sprint 12 produces SPIR-V; Sprint 13 lowers SPIR-V; gluing them under `-DGPU_BUILD_GLSLANG=ON` with a real GLSL test still pending. |
+| **GLSL frontend: vec ctors, for/while, reflect/length/abs** | Sprint 9 covers if/else + a few built-ins; Sprint 17 didn't extend the parser. |
+| **FP HW-aligned LUT polynomials (3 ULP)** | Sprint 16 polynomials are ~1e-2 to ~1e-3 relative. 3-ULP target needs LUT-assisted forms. |
+| **sim ↔ sw_ref FP bit-alignment** | Both should call the same library. Currently sim still uses `std::*`; sw_ref uses Sprint-16 polynomials. |
+| **Conformance: dEQP / glmark2** | Scene-format harness exists (Sprint 11/15) but scenes are hand-rolled. |
+| **Per-block microarch (frozen v1.0)** | 15 microarch docs still at draft v0.1. |
+| **Stencil per-sample for sample-shading** | Sprint 17 uses per-sample stencil in the MSAA path; sample-shading (FS per-sample) is out of scope for v1. |
+| **Two-sided stencil, polygon offset, depth-bounds** | All deferred. |
 
-**Closed by Sprint 7**:
-- ~~ISA v1.1: MEM `dst_class` + `src_class`; per-lane `break` semantics~~
+**Closed by Sprint 7**: ~~ISA v1.1: MEM `dst_class`+`src_class`; per-lane `break`~~
 
 **Closed by Sprints 8–12**:
-- ~~PFO depth/stencil/blend~~ (depth + blend done Sprint 8; stencil still TODO)
-- ~~More TLM blocks: VF + PA~~ (RS/TMU/PFO/TBF/RSV/MMU/L2/MC/CSR/PMU still TODO)
-- ~~GLSL frontend ext: dot/normalize/max/min/clamp/pow + if/else + locals~~
-  (vector ctors, for/while, reflect/length/abs still TODO)
-- ~~Conformance harness~~ (scene format simple, scene-level shader binding TODO)
-- ~~glslang integration~~ (SPIR-V emit done; SPIR-V → IR lowering still TODO)
+- ~~PFO depth + blend~~ (Sprint 8; stencil added Sprint 17)
+- ~~More TLM blocks: VF + PA~~ (Sprint 10), ~~+ RS~~ (Sprint 14)
+- ~~GLSL frontend ext: dot/normalize/max/min/clamp/pow + if/else + locals~~ (Sprint 9)
+- ~~Conformance harness~~ (Sprint 11) + ~~golden PPM diff~~ (Sprint 15)
+- ~~glslang integration: GLSL → SPIR-V~~ (Sprint 12) + ~~SPIR-V → ISA partial~~ (Sprint 13)
+
+**Closed by Sprints 13–18**:
+- ~~SPIR-V → ISA lowering (subset)~~ — Sprint 13
+- ~~RS as TLM block~~ — Sprint 14
+- ~~Golden-PPM diff in conformance harness~~ — Sprint 15
+- ~~FP HW alignment first cut~~ — Sprint 16
+- ~~Stencil + scissor + alpha-to-coverage in PFO~~ — Sprint 17
+- ~~Phase 2 cycle-accurate kickoff (CP template)~~ — Sprint 18
 
 ---
 
@@ -373,3 +399,110 @@ finishing one track first.
   with full filenames), and `systemc/blocks/commandprocessor/README.md`
   updated. No abbreviated `.md` references remain in the repo.
 - **Tests**: Documentation-only change; CTest 14/14 unaffected.
+
+## Sprint 13 — SPIR-V → ISA lowering(`a7ae47b`)
+- **Done**: New `compiler/spv/` subdir (gpu::spv namespace), pure SPIR-V
+  parser independent of glslang, always built into gpu_compiler. Subset:
+  TypeVoid/Float/Vector/Matrix/Pointer/Function, Decorate
+  (BuiltIn/Location/Binding), Variable (Input/Output/Uniform), OpFunction/
+  End, OpLabel, OpReturn, OpVariable, OpLoad, OpStore, OpFAdd, OpFMul,
+  OpMatrixTimesVector (lowered to 4×dp4 with per-row write-mask).
+- **Tests**: 15/15. New `compiler.spv_lower` hand-crafts a minimal
+  SPIR-V module for `gl_Position = u_mvp * a_pos;` and asserts 4 dp4 +
+  ≥1 mov + correct ABI metadata.
+- **Why no glslang in the test**: the parser ships everywhere — Docker
+  or local — and exercises the lowering deterministically.
+- **Out of scope**: OpExtInst (GLSL.std.450), OpAccessChain,
+  OpVectorShuffle, OpDot, OpImageSampleImplicitLod, control flow.
+
+## Sprint 14 — Rasterizer as TLM block(`4960797`)
+- **Done**: `systemc/blocks/rasterizer/{include,src}` mirroring sw_ref
+  rasterizer (1× + 4× MSAA, D3D rotated grid, perspective-correct
+  varying via 1/w). Five blocks total now in TLM-LT.
+  Top-level `gpu_top` adds `rs` as a sibling target alongside `pa`.
+  TB updates `RasterJob` payload + posts to RS, asserts non-empty
+  fragment list.
+- **Tests**: gpu_systemc lib compiles; 15/15 non-SystemC tests still
+  green. The chained CP→VF→SC→PA→RS test runs in Docker.
+- **Out of scope**: TMU, PFO/TBF/RSV, MMU, L2, MC, CSR, PMU. CP
+  multi-stage dispatch.
+
+## Sprint 15 — Golden PPM diff in conformance harness(`142bd77`)
+- **Done**: scene format gains `golden_ppm <path>` and `expect_rmse_max
+  <max>` keys. scene_runner gains `read_ppm` / `write_ppm` /
+  `rmse(a, b)` (double-precision per-channel RMS) plus a
+  `--write-golden` flag for capturing the golden after a known-good
+  change. New `tests/scenes/triangle_rgb.scene` + checked-in
+  `triangle_rgb.golden.ppm` (32×32 P6, 3085 bytes).
+- **Tests**: 16/16. New `conformance.triangle_rgb` runs the Gouraud
+  triangle, compares against the golden with rmse ≤ 0.5 channel units.
+- **Out of scope**: scene-level shader binding (runner still uses
+  pass-through VS+FS); SSIM rather than RMSE; multi-PPM regression
+  report.
+
+## Sprint 16 — FP HW alignment first cut(`619884c`)
+- **Done**: `sw_ref/src/fp/fp32.cpp` rewritten with explicit polynomial
+  approximations. rcp via Newton-Raphson on a 48/17 - 32/17·x_n seed;
+  rsq via the classic Quake fast inverse sqrt + 2 NR steps; exp2/log2
+  via degree-5 polynomials on a reduced range; sin/cos via Maclaurin
+  to f^9 / f^8 with range-reduce to [-π, π].
+- **Honest scope**: not yet 3-ULP. Measured max relative error vs libm
+  over 256 samples: rcp 1.2e-5, rsq 7.3e-7, exp2 8.4e-5, log2 8.6e-2
+  (worst), sin 6.9e-3, cos 2.4e-2. Test bound 1e-1 relative; tightening
+  to 3 ULP needs LUT-assisted forms in Phase 2.x.
+- **Tests**: 16/16. `sw_ref.fp` extended with a `sweep()` helper, max
+  abs/relative error per function, asserts each ≤ 1e-1.
+- **Out of scope**: LUT-assisted polynomials, sim ↔ sw_ref bit
+  alignment, denormal handling on input, NaN/-inf at boundaries.
+
+## Sprint 17 — Stencil + scissor + alpha-to-coverage(`6eea98c`)
+- **Done**:
+  - `state.h` gains StencilFunc (8 funcs), StencilOp (6 ops),
+    stencil_ref + read_mask + write_mask, sop_fail/zfail/zpass,
+    scissor_enable + scissor_{x,y,w,h}.
+  - `Framebuffer.stencil` 1× 8-bit per-pixel buffer.
+  - `rasterizer.cpp` clips bbox against scissor box before sampling.
+  - `per_fragment_ops.cpp` rewritten: full ES 2.0 pipeline of
+    a2c → stencil test → depth test → blend → write. Both 1× and 4×
+    MSAA paths.
+  - a2c table per `docs/msaa_spec.md §5.2`:
+    `0 / 0001 / 0101 / 0111 / 1111` at 0 / 0.125 / 0.375 / 0.625 / 0.875.
+- **Tests**: 17/17. New `sw_ref.stencil_scissor`:
+  - Scissor test: full-screen white triangle clipped to (8..23,8..23);
+    asserts ≥100 painted, zero outside.
+  - Stencil test: pass-A writes stencil=1 in a region (REPLACE on
+    pass), pass-B blue full-screen with SF_EQUAL ref=1; asserts
+    paint stays inside the stencil-1 region.
+- **Out of scope**: per-sample stencil for sample-shading, two-sided
+  stencil, polygon offset, depth-bounds test.
+
+---
+
+## Phase 2 — Cycle-Accurate SystemC
+
+Master Plan Phase 2 spans M9–M16 (7 months). Each Phase-1 LT block
+gets a parallel `<blockname>_pv.{h,cpp}` PV implementation; both
+flavours coexist; top-level CMake flag picks the build (Phase 2.x).
+Detailed plan + naming + handshake convention + migration order in
+[`docs/phase2_kickoff.md`](phase2_kickoff.md).
+
+## Sprint 18 — Phase 2 kickoff(`ca5db3b`)
+- **Done**:
+  - `commandprocessor_pv.{h,cpp}` — first PV-flavour block. SC_CTHREAD
+    synchronous to `clk.pos()`, async-deassert reset via
+    `reset_signal_is(rst_n, false)`. Wire-level interface: sc_in/out
+    + ready/valid + 64-bit data signal. Same `enqueue()` driver-side
+    API as the LT variant.
+  - `tb/test_cp_pv.cpp` (`sc_main`): sc_clock @ 10 ns + tiny Sink
+    consumer that always asserts ready and records data words.
+    Enqueue 3 jobs, run, assert sink saw all 3 with correct data.
+  - `docs/phase2_kickoff.md`: full Phase 2 plan — coexistence pattern,
+    sc_in/out + CTHREAD + ready/valid convention, Sprint 19–28
+    migration order across the remaining 14 blocks, co-sim strategy
+    (-DGPU_SYSTEMC_FLAVOR=lt|pv at top), exit criteria.
+- **Tests**: 17/17 non-SystemC still green. `gpu_systemc` library
+  compiles cleanly with the PV CP added; testbench runs in Docker.
+- **Out of scope (next sprints)**: VF / SC / PA / RS / TMU / PFO /
+  TBF / RSV / MMU / L2 / MC / CSR / PMU all still need PV variants.
+  Top-level chain doesn't yet route through the PV CP (waits for at
+  least one downstream PV block — Sprint 19).
