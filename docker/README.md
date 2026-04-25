@@ -50,8 +50,26 @@ docker run --rm -it \
 
 ## CI 使用
 
-GitHub Actions 可直接 `uses: docker://...` 或 pull 預 build 的 registry image。
-Phase 0 會建 CI workflow 做 cached image build + push。
+CI(`.github/workflows/ci.yml`)流程:
+
+1. **`dev-image` job**:每次 run 跑 `docker buildx build` with GHA cache,
+   tag 兩個:`ghcr.io/<owner>/<repo>/dev:<sha>` + `:latest`,push 到 GHCR
+2. **下游 jobs**(lint / rtl-lint / build / gen-check):用 `container:` 直接進 dev image,
+   credentials 走 `GITHUB_TOKEN`(無需手動建 PAT)
+
+### 加速效果
+
+| 情境 | 耗時 |
+|---|---|
+| 第一次 run(cold cache) | ~25–30 min(完整 build) |
+| Dockerfile 沒改 | ~30–60 sec(cache hit + push tag) |
+| Dockerfile 改一點(e.g. 加 apt 套件) | ~3–10 min(局部 layer rebuild) |
+
+### Image visibility
+
+第一次 push 後,GHCR 上的 package 預設是 private。
+這沒關係 — 同 repo 內的 workflow 用 `GITHUB_TOKEN` 自動可拉。
+若要外部可見:GitHub → Profile → Packages → 點 image → Package settings → Change visibility → Public。
 
 ## 環境變數
 

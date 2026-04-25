@@ -6,90 +6,133 @@ on:
   pull_request:
     branches: [main]
 
+# 全 workflow 預設 token 權限。dev-image job 還會額外要 packages: write。
+permissions:
+  contents: read
+
 env:
-  # 預先推到 registry 後改用該 image。尚未推之前每次都會重 build,慢但正確。
-  DEV_IMAGE: gpu-dev:v1
+  IMAGE_NAME: ghcr.io/${{ github.repository }}/dev
 
 jobs:
   # ---------------------------------------------------------------------------
-  # 每個 job 都跑在同一個 Docker image,確保工具版本與 third_party/versions.yaml
-  # 對齊。Local dev 用 ci/setup_deps.sh;CI 一律走 Docker。
+  # 1) Build dev image (with GHA buildx cache) and push to GHCR per-SHA.
+  #    Subsequent jobs `container:` into it -> nearly free.
+  #    Cache 命中時整個 job ~30s;Dockerfile 沒改時幾乎 instant 之後幾步只剩 push。
   # ---------------------------------------------------------------------------
-
-  docker-build:
+  dev-image:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.tag.outputs.image }}
     steps:
       - uses: actions/checkout@v4
-      - name: Build dev image
-        run: docker build -f docker/Dockerfile -t ${{ env.DEV_IMAGE }} .
-      - name: Save image
-        run: docker save ${{ env.DEV_IMAGE }} | gzip > /tmp/image.tar.gz
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dev-image
-          path: /tmp/image.tar.gz
-          retention-days: 1
 
-  lint:
-    needs: docker-build
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: dev-image
-          path: /tmp
-      - run: docker load < /tmp/image.tar.gz
-      - name: Run all lint via Docker
+      - name: Compute image tag
+        id: tag
         run: |
-          docker run --rm -v "$PWD":/work -w /work ${{ env.DEV_IMAGE }} bash -c "
-            ci/check_clang_format.sh &&
-            ci/check_python.sh &&
-            ci/check_specs.sh
-          "
+          # GHCR uses lowercase only
+          repo_lc="${IMAGE_NAME,,}"
+          echo "image=${repo_lc}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "image_latest=${repo_lc}:latest"     >> "$GITHUB_OUTPUT"
 
-  rtl-lint:
-    needs: docker-build
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push (cached)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.tag.outputs.image }}
+            ${{ steps.tag.outputs.image_latest }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ---------------------------------------------------------------------------
+  # 2) Lint job — runs inside the dev image.
+  # ---------------------------------------------------------------------------
+  lint:
+    needs: dev-image
     runs-on: ubuntu-22.04
+    container:
+      image: ${{ needs.dev-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with: {name: dev-image, path: /tmp}
-      - run: docker load < /tmp/image.tar.gz
-      - name: Verilator lint
-        run: docker run --rm -v "$PWD":/work -w /work ${{ env.DEV_IMAGE }} bash ci/check_verilog.sh
+      - name: Mark workspace safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - run: bash ci/check_clang_format.sh
+      - run: bash ci/check_python.sh
+      - run: bash ci/check_specs.sh
 
+  # ---------------------------------------------------------------------------
+  # 3) Verilog lint (Phase 3+; no-op until RTL exists).
+  # ---------------------------------------------------------------------------
+  rtl-lint:
+    needs: dev-image
+    runs-on: ubuntu-22.04
+    container:
+      image: ${{ needs.dev-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - run: bash ci/check_verilog.sh
+
+  # ---------------------------------------------------------------------------
+  # 4) Build + smoke test.
+  # ---------------------------------------------------------------------------
   build:
-    needs: docker-build
+    needs: dev-image
     runs-on: ubuntu-22.04
     strategy:
       matrix:
         compiler: [gcc, clang]
+    container:
+      image: ${{ needs.dev-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-        with: {submodules: recursive}
-      - uses: actions/download-artifact@v4
-        with: {name: dev-image, path: /tmp}
-      - run: docker load < /tmp/image.tar.gz
-      - name: Build + smoke
-        run: |
-          docker run --rm -v "$PWD":/work -w /work ${{ env.DEV_IMAGE }} bash -c "
-            ci/build.sh ${{ matrix.compiler }} &&
-            ci/smoke.sh
-          "
+        with:
+          submodules: recursive
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - run: bash ci/build.sh ${{ matrix.compiler }}
+      - run: bash ci/smoke.sh
 
+  # ---------------------------------------------------------------------------
+  # 5) Spec / generated drift detection.
+  # ---------------------------------------------------------------------------
   gen-check:
-    needs: docker-build
+    needs: dev-image
     runs-on: ubuntu-22.04
+    container:
+      image: ${{ needs.dev-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with: {name: dev-image, path: /tmp}
-      - run: docker load < /tmp/image.tar.gz
-      - name: Regenerate from specs/ and diff
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - run: bash ci/regen.sh
+      - name: Assert no drift
         run: |
-          docker run --rm -v "$PWD":/work -w /work ${{ env.DEV_IMAGE }} bash ci/regen.sh
-          git diff --exit-code || (
-            echo "::error::Generated files out of sync with specs/"
+          if ! git diff --exit-code; then
+            echo "::error::Generated files out of sync with specs/. Run ci/regen.sh and commit."
             exit 1
-          )
+          fi
