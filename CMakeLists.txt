@@ -29,6 +29,7 @@ enable_testing()
 
 add_subdirectory(compiler)
 add_subdirectory(sw_ref)
+add_subdirectory(systemc)
 
 if(GPU_BUILD_TESTS)
     add_subdirectory(compiler/tests)
