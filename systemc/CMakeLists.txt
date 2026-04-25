@@ -41,6 +41,7 @@ add_library(gpu_systemc STATIC
     blocks/rasterizer/src/rasterizer_lt.cpp
     blocks/rasterizer/src/rasterizer_ca.cpp
     top/src/gpu_top.cpp
+    top/src/gpu_top_ca.cpp
 )
 target_include_directories(gpu_systemc PUBLIC
     common/include
@@ -108,5 +109,12 @@ if(GPU_BUILD_TESTS)
             INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
             BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
         add_test(NAME systemc.rs_ca COMMAND test_rasterizer_ca)
+
+        add_executable(test_gpu_top_ca tb/test_gpu_top_ca.cpp)
+        target_link_libraries(test_gpu_top_ca PRIVATE gpu_systemc)
+        set_target_properties(test_gpu_top_ca PROPERTIES
+            INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
+            BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
+        add_test(NAME systemc.gpu_top_ca COMMAND test_gpu_top_ca)
     endif()
 endif()
