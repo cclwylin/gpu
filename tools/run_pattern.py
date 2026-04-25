@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
-"""Sprint 34 — pattern runner.
+"""Sprint 34/36 — pattern runner.
 
-Runs a named .scene through both the sw_ref pipeline and (when
-available) the SystemC cycle-accurate chain, dumps PPMs under
-out/, and reports cycle / paint metrics.
+Two modes, picked from the pattern name:
+
+  * `<scene>` (e.g. `triangle_white`)
+        Resolves at tests/scenes/<name>.scene.
+        Runs sw_ref's scene_runner; runs the SystemC sc_pattern_runner
+        if its binary exists. Dumps PPMs to out/<name>.swref.ppm and
+        out/<name>.sc.ppm and prints metrics + RMSE.
+
+  * `examples/<name>` (e.g. `examples/cube`)
+        Resolves at tests/examples/<name>.c.
+        Builds the glcompat-linked binary `glex_<name>` and runs it,
+        which compiles GL 1.x → renders through sw_ref → dumps a PPM.
+        Doesn't go through the SC chain (the .c is too dynamic to
+        capture as a static .scene yet).
 
 Usage:
-    python3 tools/run_pattern.py <pattern>          # default: build/
+    python3 tools/run_pattern.py <pattern>
+    python3 tools/run_pattern.py --list
     python3 tools/run_pattern.py <pattern> --build-dir build-docker
-    python3 tools/run_pattern.py --list             # list patterns
-
-Patterns are resolved at tests/scenes/<name>.scene.
-
-The SystemC binary (`sc_pattern_runner`) is Docker-only on
-macOS+GCC due to the libstdc++/libc++ ABI mismatch in
-/usr/local/systemc-2.3.4. The script detects whether the binary
-got built and silently skips that half if not.
 """
 
 from __future__ import annotations
@@ -23,24 +27,29 @@ from __future__ import annotations
 import argparse
 import math
 import re
-import struct
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENES_DIR = ROOT / "tests" / "scenes"
+EXAMPLES_DIR = ROOT / "tests" / "examples"
 OUT_DIR = ROOT / "out"
 
 KV_RE = re.compile(r"^([A-Z_]+)=(.+)$")
 
 
-def list_patterns() -> list[str]:
+def list_scenes() -> list[str]:
     return sorted(p.stem for p in SCENES_DIR.glob("*.scene"))
 
 
+def list_examples() -> list[str]:
+    skip = {"logo", "mjkimage", "trackball"}     # helper-only files
+    return sorted(p.stem for p in EXAMPLES_DIR.glob("*.c") if p.stem not in skip)
+
+
 def parse_kv(stdout: str) -> dict[str, str]:
-    out = {}
+    out: dict[str, str] = {}
     for line in stdout.splitlines():
         m = KV_RE.match(line.strip())
         if m:
@@ -49,16 +58,11 @@ def parse_kv(stdout: str) -> dict[str, str]:
 
 
 def read_ppm(path: Path) -> tuple[int, int, bytes]:
-    """Returns (W, H, raw_rgb_bytes)."""
     data = path.read_bytes()
-    # Header: P6\n W H\n 255\n <binary>
-    nl = 0
-    parts = []
-    cur = bytearray()
+    nl, parts, cur = 0, [], bytearray()
     while len(parts) < 3 and nl < len(data):
-        b = data[nl]
-        nl += 1
-        if b in (0x0A, 0x20):    # newline or space
+        b = data[nl]; nl += 1
+        if b in (0x0A, 0x20):
             if cur:
                 parts.append(bytes(cur).decode())
                 cur = bytearray()
@@ -67,8 +71,6 @@ def read_ppm(path: Path) -> tuple[int, int, bytes]:
     if not parts or parts[0] != "P6":
         raise ValueError(f"{path}: not a P6 PPM")
     W, H = int(parts[1]), int(parts[2])
-    # parts[3] would be 255 — already consumed by the second-newline.
-    # Find end of header (after "255\n").
     head_end = data.index(b"255\n") + 4
     return W, H, data[head_end:]
 
@@ -76,43 +78,25 @@ def read_ppm(path: Path) -> tuple[int, int, bytes]:
 def rmse(a: bytes, b: bytes) -> float:
     if len(a) != len(b):
         return float("inf")
-    n = len(a)
     s = 0.0
-    for i in range(0, n, 4096):
-        chunk_a = a[i:i + 4096]
-        chunk_b = b[i:i + 4096]
-        for ca, cb in zip(chunk_a, chunk_b):
-            d = ca - cb
-            s += d * d
-    return math.sqrt(s / n)
+    for ca, cb in zip(a, b):
+        d = ca - cb
+        s += d * d
+    return math.sqrt(s / len(a))
 
 
-def run(cmd: list[str | Path]) -> subprocess.CompletedProcess:
+def painted_count(buf: bytes) -> int:
+    return sum(1 for i in range(0, len(buf) - 2, 3) if buf[i] | buf[i+1] | buf[i+2])
+
+
+def run(cmd: list, env: dict | None = None) -> subprocess.CompletedProcess:
     print("$", " ".join(str(c) for c in cmd))
-    return subprocess.run(
-        [str(c) for c in cmd], capture_output=True, text=True, check=False
-    )
+    return subprocess.run([str(c) for c in cmd],
+                          capture_output=True, text=True, check=False,
+                          env=env)
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("pattern", nargs="?")
-    ap.add_argument("--build-dir", default="build")
-    ap.add_argument("--list", action="store_true")
-    args = ap.parse_args()
-
-    if args.list or args.pattern is None:
-        print("patterns:")
-        for p in list_patterns():
-            print(f"  {p}")
-        return 0
-
-    scene_path = SCENES_DIR / f"{args.pattern}.scene"
-    if not scene_path.is_file():
-        print(f"unknown pattern: {args.pattern}", file=sys.stderr)
-        print("available: " + ", ".join(list_patterns()), file=sys.stderr)
-        return 2
-
+def run_scene(args, scene_path: Path) -> int:
     build_dir = ROOT / args.build_dir
     sw_bin = build_dir / "tests" / "conformance" / "scene_runner"
     sc_bin = build_dir / "tests" / "conformance" / "sc_pattern_runner"
@@ -120,12 +104,11 @@ def main() -> int:
         print(f"missing {sw_bin} — run cmake --build {args.build_dir} first",
               file=sys.stderr)
         return 2
-
     OUT_DIR.mkdir(exist_ok=True)
-    sw_ppm = OUT_DIR / f"{args.pattern}.swref.ppm"
-    sc_ppm = OUT_DIR / f"{args.pattern}.sc.ppm"
+    name = scene_path.stem
+    sw_ppm = OUT_DIR / f"{name}.swref.ppm"
+    sc_ppm = OUT_DIR / f"{name}.sc.ppm"
 
-    # ---- sw_ref ----
     sw = run([sw_bin, scene_path, "--out", sw_ppm])
     if sw.returncode != 0:
         print(sw.stdout); print(sw.stderr, file=sys.stderr)
@@ -133,7 +116,6 @@ def main() -> int:
     sw_kv = parse_kv(sw.stdout)
     print(sw.stdout.strip())
 
-    # ---- SC chain (optional) ----
     sc_kv: dict[str, str] = {}
     if sc_bin.is_file():
         sc = run([sc_bin, scene_path, sc_ppm])
@@ -143,13 +125,11 @@ def main() -> int:
         sc_kv = parse_kv(sc.stdout)
         print(sc.stdout.strip())
     else:
-        print(f"(sc_pattern_runner not built at {sc_bin} — skipping CA chain;"
-              " build inside Docker for SystemC)")
+        print(f"(sc_pattern_runner not built at {sc_bin} — SC chain skipped)")
 
-    # ---- Compare ----
     print()
     print("=" * 60)
-    print(f"PATTERN: {args.pattern}")
+    print(f"PATTERN: {name}")
     print(f"  TRIANGLES   : {sw_kv.get('TRIANGLES', '?')}")
     print(f"  sw_ref PPM  : {sw_ppm}")
     print(f"  sw_ref paint: {sw_kv.get('PAINTED', '?')}")
@@ -169,6 +149,87 @@ def main() -> int:
         print(f"  RMSE swref↔sc: {diff:.3f}")
     print("=" * 60)
     return 0
+
+
+def run_example(args, c_path: Path) -> int:
+    """Build glex_<name> and execute it."""
+    build_dir = ROOT / args.build_dir
+    name = c_path.stem
+    OUT_DIR.mkdir(exist_ok=True)
+    out_ppm = OUT_DIR / f"glex_{name}.ppm"
+
+    # 1. cmake build the target.
+    bin_path = build_dir / "glcompat" / f"glex_{name}"
+    print(f"$ cmake --build {args.build_dir} --target glex_{name}")
+    rc = subprocess.run(
+        ["cmake", "--build", str(build_dir),
+         "--target", f"glex_{name}", "-j", "4"],
+        capture_output=True, text=True, check=False)
+    if rc.returncode != 0 or not bin_path.is_file():
+        print("BUILD FAILED:")
+        # Print only the first error line.
+        for line in (rc.stderr or rc.stdout).splitlines():
+            if "error:" in line:
+                print("   ", line)
+                break
+        return 1
+
+    # 2. Run the binary with GLCOMPAT_OUT pointing at our scratch PPM.
+    import os
+    env = dict(os.environ)
+    env["GLCOMPAT_OUT"] = str(out_ppm)
+    rc = run([bin_path], env=env)
+    if rc.returncode != 0:
+        print(rc.stdout); print(rc.stderr, file=sys.stderr)
+        return 1
+    print(rc.stderr.strip())     # glcompat prints "saved …" to stderr
+
+    # 3. Summarise.
+    if not out_ppm.is_file():
+        print("(no PPM written)")
+        return 1
+    W, H, buf = read_ppm(out_ppm)
+    paint = painted_count(buf)
+    print()
+    print("=" * 60)
+    print(f"EXAMPLE: {name}.c")
+    print(f"  source : {c_path}")
+    print(f"  output : {out_ppm}  ({W}×{H})")
+    print(f"  painted: {paint} of {W*H} pixels  ({100.0*paint/(W*H):.1f}%)")
+    print("=" * 60)
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("pattern", nargs="?")
+    ap.add_argument("--build-dir", default="build")
+    ap.add_argument("--list", action="store_true")
+    args = ap.parse_args()
+
+    if args.list or args.pattern is None:
+        print("scenes (run via sw_ref + SC chain):")
+        for p in list_scenes():
+            print(f"  {p}")
+        print()
+        print("examples (compiled GL 1.x → sw_ref):")
+        for p in list_examples():
+            print(f"  examples/{p}")
+        return 0
+
+    if args.pattern.startswith("examples/"):
+        name = args.pattern.split("/", 1)[1]
+        c_path = EXAMPLES_DIR / f"{name}.c"
+        if not c_path.is_file():
+            print(f"unknown example: {name}", file=sys.stderr); return 2
+        return run_example(args, c_path)
+
+    scene_path = SCENES_DIR / f"{args.pattern}.scene"
+    if not scene_path.is_file():
+        print(f"unknown pattern: {args.pattern}", file=sys.stderr)
+        print("see --list", file=sys.stderr)
+        return 2
+    return run_scene(args, scene_path)
 
 
 if __name__ == "__main__":

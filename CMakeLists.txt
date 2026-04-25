@@ -31,6 +31,7 @@ add_subdirectory(compiler)
 add_subdirectory(compiler/glslang)
 add_subdirectory(sw_ref)
 add_subdirectory(systemc)
+add_subdirectory(glcompat)
 
 if(GPU_BUILD_TESTS)
     add_subdirectory(compiler/tests)
