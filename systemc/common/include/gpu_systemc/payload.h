@@ -4,7 +4,12 @@
 #include <vector>
 
 #include "gpu/texture.h"
+#include "gpu/types.h"
 #include "gpu_compiler/sim.h"
+
+namespace gpu {
+struct Context;     // forward decl from gpu/state.h
+}
 
 namespace gpu::systemc {
 
@@ -57,6 +62,13 @@ struct RasterJob {
     bool msaa_4x = false;
     int  varying_count = 0;
     std::vector<RasterFragment> fragments;     // populated by RS
+};
+
+// Sprint 25 PfoJob — bundles a Quad + the Context the PFO state lives
+// on. The CA block invokes gpu::pipeline::per_fragment_ops on it.
+struct PfoJob {
+    gpu::Context*     ctx  = nullptr;
+    const gpu::Quad*  quad = nullptr;
 };
 
 // Sprint 24 TextureJob — batch of (u,v) sample requests against one
