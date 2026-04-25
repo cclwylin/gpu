@@ -309,12 +309,15 @@ void save_scene() {
     const char* env = std::getenv("GLCOMPAT_SCENE");
     if (!env) return;
     auto& s = state();
-    if (g_scene_buf.empty()) {
-        std::fprintf(stderr, "[glcompat] no geometry captured for scene\n");
+    // Even a zero-triangle scene is meaningful: stereo.c clears the
+    // framebuffer twice with different colors and never draws — the
+    // captured `clear` field still reproduces the result on the SC
+    // side. Only bail if the framebuffer was never touched at all.
+    if (!s.ctx_inited && g_scene_buf.empty()) {
+        std::fprintf(stderr, "[glcompat] no draw activity for scene\n");
         return;
     }
     if (g_scene_buf.size() % 3 != 0) {
-        // Trim trailing partial — scene format wants triplets only.
         g_scene_buf.resize(g_scene_buf.size() - (g_scene_buf.size() % 3));
     }
     std::ofstream f(env);

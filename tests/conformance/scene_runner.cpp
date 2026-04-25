@@ -85,8 +85,9 @@ bool parse_scene(const std::string& path, Scene& s, std::string& err) {
         else if (key == "blend")       { int v; is >> v; s.blend       = v != 0; }
         else { err = "unknown key '" + key + "'"; return false; }
     }
-    if (s.positions.size() % 3 != 0 || s.positions.empty()) {
-        err = "vertex count must be a positive multiple of 3";
+    // Empty scenes are allowed (clear-only frames like stereo.c).
+    if (s.positions.size() % 3 != 0) {
+        err = "vertex count must be a multiple of 3";
         return false;
     }
     return true;

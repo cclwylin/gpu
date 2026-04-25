@@ -131,6 +131,11 @@ struct State {
     // ---- gpu::Context (renders here) ----
     gpu::Context ctx;
     bool ctx_inited = false;
+
+    // ---- raster-pos state (glDrawPixels / glBitmap) ----
+    Vec4 raster_pos = {{0, 0, 0, 1}};       // window coords
+    bool raster_valid = true;
+    float pixel_zoom_x = 1.0f, pixel_zoom_y = 1.0f;
 };
 
 State& state();

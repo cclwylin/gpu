@@ -90,8 +90,8 @@ bool parse_scene(const std::string& path, Scene& s, std::string& err) {
         else if (key == "blend")       { int v; is >> v; s.blend       = v != 0; }
         // unknown keys silently ignored — some belong to scene_runner only
     }
-    if (s.positions.size() % 3 != 0 || s.positions.empty()) {
-        err = "vertex count must be a positive multiple of 3";
+    if (s.positions.size() % 3 != 0) {
+        err = "vertex count must be a multiple of 3";
         return false;
     }
     return true;
@@ -322,6 +322,25 @@ int sc_main(int argc, char** argv) {
             jobs[i].constants[1][k] = scene.colours[i][k];
         }
         src.push(reinterpret_cast<uint64_t>(&jobs[i]));
+    }
+
+    // Clear-only scene (e.g. stereo.c) — write the cleared fb to PPM
+    // and exit. No need to spin up the chain at all.
+    if (scene.positions.empty()) {
+        std::ofstream f(out_ppm, std::ios::binary);
+        if (!f) { std::fprintf(stderr, "FAIL: cannot write %s\n",
+                              out_ppm.c_str()); return 1; }
+        f << "P6\n" << scene.width << " " << scene.height << "\n255\n";
+        for (int y = 0; y < scene.height; ++y)
+            for (int x = 0; x < scene.width; ++x) {
+                f.put((char)((scene.clear_rgba >>  0) & 0xFF));
+                f.put((char)((scene.clear_rgba >>  8) & 0xFF));
+                f.put((char)((scene.clear_rgba >> 16) & 0xFF));
+            }
+        std::printf("PPM=%s\n", out_ppm.c_str());
+        std::printf("CYCLES=0\nFLUSHES=0\nPAINTED=%d\nTRIANGLES=0\n",
+                    scene.width * scene.height);
+        return 0;
     }
 
     // Drain-detect: chain finished when sink.seen hasn't grown for

@@ -12,17 +12,36 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 
 namespace {
+
+// Sprint 41 — minimal multi-window + overlay support.
+//
+//  * `windows[0]` = main window, created on first glutCreateWindow.
+//  * Each glutCreateSubWindow appends a child to `windows[]` with
+//    its own viewport rect. glutDisplayFunc registers on the
+//    most-recently-created window (matches real GLUT semantics).
+//  * Overlay = a sibling display callback that runs after the main
+//    display in glutMainLoop (needed for oversphere.c, which does
+//    all its drawing in the overlay path).
+struct GlutWindow {
+    int  x = 0, y = 0, w = 256, h = 256;
+    void (*display_cb)(void) = nullptr;
+    void (*reshape_cb)(int, int) = nullptr;
+    void (*overlay_cb)(void) = nullptr;
+};
+
 struct GlutState {
     int  win_w = 256, win_h = 256;
     int  win_x = 0, win_y = 0;
-    void (*display_cb)(void) = nullptr;
-    void (*reshape_cb)(int, int) = nullptr;
+    std::vector<GlutWindow> windows = {GlutWindow{}};
+    int  current = 0;       // index into windows[]; updated by Set/Create
     void (*keyboard_cb)(unsigned char, int, int) = nullptr;
     void (*idle_cb)(void) = nullptr;
 };
 GlutState& gs() { static GlutState g; return g; }
+GlutWindow& cw() { return gs().windows[gs().current]; }
 }  // namespace
 
 extern "C" {
@@ -32,15 +51,33 @@ void glutInitDisplayMode(unsigned int)              {}
 void glutInitDisplayString(const char*)             {}
 void glutInitWindowSize(int w, int h)               { gs().win_w = w; gs().win_h = h; }
 void glutInitWindowPosition(int x, int y)           { gs().win_x = x; gs().win_y = y; }
-int  glutCreateWindow(const char*)                  { return 1; }
-int  glutCreateSubWindow(int, int, int, int, int)   { return 1; }
+int  glutCreateWindow(const char*) {
+    auto& g = gs();
+    // The sole entry created at static-init covers the main window.
+    g.current = 0;
+    g.windows[0].x = g.win_x;
+    g.windows[0].y = g.win_y;
+    g.windows[0].w = g.win_w;
+    g.windows[0].h = g.win_h;
+    return 1;
+}
+int  glutCreateSubWindow(int /*parent*/, int x, int y, int w, int h) {
+    auto& g = gs();
+    g.windows.push_back({x, y, w, h, nullptr, nullptr, nullptr});
+    g.current = (int)g.windows.size() - 1;
+    return g.current + 1;     // GLUT IDs are 1-based
+}
 void glutDestroyWindow(int)                         {}
-void glutSetWindow(int)                             {}
-int  glutGetWindow(void)                            { return 1; }
+void glutSetWindow(int id) {
+    auto& g = gs();
+    const int i = id - 1;
+    if (i >= 0 && i < (int)g.windows.size()) g.current = i;
+}
+int  glutGetWindow(void)                            { return gs().current + 1; }
 void glutSetWindowTitle(const char*)                {}
 
-void glutDisplayFunc(void (*f)(void))                       { gs().display_cb = f; }
-void glutReshapeFunc(void (*f)(int, int))                   { gs().reshape_cb = f; }
+void glutDisplayFunc(void (*f)(void))               { cw().display_cb = f; }
+void glutReshapeFunc(void (*f)(int, int))           { cw().reshape_cb = f; }
 void glutKeyboardFunc(void (*f)(unsigned char, int, int))   { gs().keyboard_cb = f; }
 void glutSpecialFunc(void (*)(int, int, int))               {}
 void glutMouseFunc(void (*)(int, int, int, int))            {}
@@ -100,7 +137,7 @@ void glutEstablishOverlay(void)                             {}
 void glutHideOverlay(void)                                  {}
 void glutShowOverlay(void)                                  {}
 void glutPostOverlayRedisplay(void)                         {}
-void glutOverlayDisplayFunc(void (*)(void))                 {}
+void glutOverlayDisplayFunc(void (*f)(void))                { cw().overlay_cb = f; }
 void glutHideWindow(void)                                   {}
 void glutShowWindow(void)                                   {}
 int  glutExtensionSupported(const char*)                    { return 1; }    // claim everything; we stub silently
@@ -116,8 +153,31 @@ int  glutUseLayer(GLenum)                                   { return 0; }
 
 void glutMainLoop(void) {
     auto& g = gs();
-    if (g.reshape_cb) g.reshape_cb(g.win_w, g.win_h);
-    if (g.display_cb) g.display_cb();
+    // Run reshape + display for every window we know about. Subwindows
+    // inherit the main reshape if they didn't register their own. We
+    // restore the GL viewport per-window so each draws into its own
+    // rectangle of the shared framebuffer.
+    for (size_t i = 0; i < g.windows.size(); ++i) {
+        g.current = (int)i;
+        auto& w = g.windows[i];
+        if (i == 0) {
+            // Main window: full requested size.
+            glViewport(0, 0, g.win_w, g.win_h);
+            if (w.reshape_cb) w.reshape_cb(g.win_w, g.win_h);
+            else              glViewport(0, 0, g.win_w, g.win_h);
+            if (w.display_cb) w.display_cb();
+            // Run the overlay callback (if any) right after main —
+            // captures cases like oversphere.c which puts all its
+            // visible content in the overlay path.
+            if (w.overlay_cb) w.overlay_cb();
+        } else {
+            // Subwindow: position + size known from glutCreateSubWindow.
+            glViewport(w.x, w.y, w.w, w.h);
+            if (w.reshape_cb) w.reshape_cb(w.w, w.h);
+            if (w.display_cb) w.display_cb();
+            if (w.overlay_cb) w.overlay_cb();
+        }
+    }
     glcompat::save_framebuffer();
     glcompat::save_scene();
     std::exit(0);
