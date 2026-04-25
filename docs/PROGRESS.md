@@ -1,7 +1,7 @@
 ---
 doc: Progress Log
 purpose: Human-readable index of what shipped per commit, mapped to Master Plan milestones.
-last_updated: 2026-04-25 (post-Sprint 18 + flavour-suffix refactor)
+last_updated: 2026-04-25 (Sprint 19 — VF cycle-accurate)
 ---
 
 # PROGRESS.md
@@ -56,6 +56,7 @@ itself — `git show <sha>`.
 | 27 | `ff512c2` | refactor             | rename `_pv` → `_cycleaccurate` (precision; later reverted) |
 | 28 | `d669695` | refactor             | revert `_cycleaccurate` → `_ca` (concise abbrev policy) |
 | 29 | `87f1cb9` | refactor          | systemc/blocks: append `_lt` suffix to LT files + classes |
+| 30 | `b27ea5f` | Phase 2 / Sprint 19 | systemc: VertexFetch cycle-accurate block (VF_ca) |
 
 ---
 
@@ -71,10 +72,10 @@ itself — `git show <sha>`.
     stencil_scissor}`
   - `conformance.{triangle_white, triangle_msaa, triangle_rgb}`
   - Skipped (Docker-only): `systemc.tlm_hello`,
-    `systemc.cp_ca`, `compiler.glsl_to_spv`
+    `systemc.cp_ca`, `systemc.vf_ca`, `compiler.glsl_to_spv`
 - **ISA**: v1.1 frozen (MEM class bits + per-lane break formalised)
 - **TLM blocks**: 5 of 15 (CP / VF / SC / PA / RS) at Phase 1 LT;
-  CP additionally has Phase 2 cycle-accurate variant
+  **2** with Phase 2 cycle-accurate variants (CP, VF)
 - **Flavour-suffix convention**: file + class suffix indicates SystemC
   abstraction level — `_lt` (LT, b_transport) / `_at` (AT, future) /
   `_pv` (PV, future) / `_ca` (cycle-accurate, sc_signal+CTHREAD).
@@ -552,3 +553,26 @@ migration order in [`docs/phase2_kickoff.md`](phase2_kickoff.md).
     where the perl rewrite swept them up.
 - **Tests**: 17/17 still green; `gpu_systemc` lib compiles with
   `-DGPU_BUILD_SYSTEMC=ON`.
+
+## Sprint 19 — VertexFetch cycle-accurate(`b27ea5f`)
+- **Done**:
+  - `vertexfetch_ca.{h,cpp}` with the canonical Phase-2 wire shape:
+    upstream consumer (`cmd_valid_i / cmd_ready_o / cmd_data_i`) +
+    downstream producer (`vert_valid_o / vert_ready_i / vert_data_o`).
+  - SC_CTHREAD synchronous to clk.pos(); active-low async-deassert
+    reset via `reset_signal_is(rst_n, false)`.
+  - Functional minimum: each accepted upstream command fans out to
+    `vertices_per_cmd` (default 3) downstream vertex jobs. The data
+    word is currently a pass-through pointer; real per-vertex
+    addressing lands when CP_ca's payload format is fleshed out.
+  - Testbench `test_vertexfetch_ca.cpp` (Docker-only):
+    Source pushes 3 cmds → VF emits 9 vertex jobs → Sink records all
+    9 with the originating cmd's payload preserved.
+  - CMake adds `vertexfetch_ca.cpp` to `gpu_systemc`; new test
+    target `systemc.vf_ca` next to `systemc.cp_ca`.
+- **Tests**: 17/17 non-SystemC still green; `gpu_systemc` lib
+  compiles with `-DGPU_BUILD_SYSTEMC=ON`. Test exe runs in Docker.
+- **Out of scope**: chaining CP_ca → VF_ca (gpu_top still uses LT
+  chain; CP_ca / VF_ca are sibling targets in the build but not yet
+  wired together — waits for SC_ca in Sprint 20 so the chain can run
+  end-to-end).

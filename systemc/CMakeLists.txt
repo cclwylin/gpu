@@ -34,6 +34,7 @@ add_library(gpu_systemc STATIC
     blocks/commandprocessor/src/commandprocessor_ca.cpp
     blocks/shadercore/src/shadercore_lt.cpp
     blocks/vertexfetch/src/vertexfetch_lt.cpp
+    blocks/vertexfetch/src/vertexfetch_ca.cpp
     blocks/primitiveassembly/src/primitiveassembly_lt.cpp
     blocks/rasterizer/src/rasterizer_lt.cpp
     top/src/gpu_top.cpp
@@ -76,5 +77,12 @@ if(GPU_BUILD_TESTS)
             INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
             BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
         add_test(NAME systemc.cp_ca COMMAND test_commandprocessor_ca)
+
+        add_executable(test_vertexfetch_ca tb/test_vertexfetch_ca.cpp)
+        target_link_libraries(test_vertexfetch_ca PRIVATE gpu_systemc)
+        set_target_properties(test_vertexfetch_ca PROPERTIES
+            INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
+            BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
+        add_test(NAME systemc.vf_ca COMMAND test_vertexfetch_ca)
     endif()
 endif()
