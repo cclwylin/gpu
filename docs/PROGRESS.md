@@ -1,7 +1,7 @@
 ---
 doc: Progress Log
 purpose: Human-readable index of what shipped per commit, mapped to Master Plan milestones.
-last_updated: 2026-04-25 (Sprint 28 — Phase 2 CA buildout complete; 15/15 CA blocks)
+last_updated: 2026-04-25 (Sprint 33 — Phase 2.x full-chain end-to-end CA wiring)
 ---
 
 # PROGRESS.md
@@ -66,15 +66,21 @@ itself — `git show <sha>`.
 | 37 | `29e9ec7` | Phase 2 / Sprint 26 | systemc: TileBuffer + ResolveUnit cycle-accurate |
 | 38 | `1d5faa7` | Phase 2 / Sprint 27 | systemc: MMU + L2 + MC cycle-accurate (memory subsystem) |
 | 39 | `82bdaf6` | Phase 2 / Sprint 28 | systemc: CSR + PMU + TileBinner cycle-accurate (sidebands) |
+| 40 | `e197bc8` | Phase 2.x / Sprint 29 | systemc: SC→PA payload-conversion adapter |
+| 41 | `d33bfaf` | Phase 2.x / Sprint 30 | systemc: PA→RS payload-conversion adapter |
+| 42 | `209cd3c` | Phase 2.x / Sprint 31 | systemc: RS→PFO payload-conversion adapter (frags → quads) |
+| 43 | `1d6db65` | Phase 2.x / Sprint 32 | systemc: PFO→TBF tile-flush trigger adapter |
+| 44 | `e95b44e` | Phase 2.x / Sprint 33 | systemc: full-chain end-to-end testbench (12 modules) |
 
 ---
 
 ## Status snapshot
 
-- **Master Plan phase**: **Phase 2 buildout complete** — every chip
-  block now has a cycle-accurate sibling. Phase 1 LT chain still the
-  production path; full-pipeline CA wiring deferred until payload
-  adapters land in Phase 2.x.
+- **Master Plan phase**: **Phase 2.x adapter set complete** — every
+  chip block has a CA sibling, and the four payload-conversion
+  adapters (SC→PA, PA→RS, RS→PFO, PFO→TBF) compose them into a
+  runnable end-to-end chain. Phase 1 LT path still the production
+  reference; CA chain now exists as a parallel executable target.
 - **Tests passing**: 17/17 (CTest, local macOS / GCC-15)
   - `compiler.{asm_roundtrip, sim_basic, glsl_compile, sim_warp,
     warp_break, glsl_ext, spv_lower}`
@@ -83,12 +89,17 @@ itself — `git show <sha>`.
   - `conformance.{triangle_white, triangle_msaa, triangle_rgb}`
   - Skipped (Docker-only): `systemc.tlm_hello`,
     `systemc.{cp,vf,sc,pa,rs,gpu_top,tmu,pfo,tbf_rsv,mem,sidebands}_ca`,
+    `systemc.{sc_pa,pa_rs,rs_pfo,pfo_tbf}_adapter_ca`,
+    `systemc.full_chain_ca`,
     `compiler.glsl_to_spv`
 - **ISA**: v1.1 frozen (MEM class bits + per-lane break formalised)
 - **TLM blocks**: 5 of 15 (CP / VF / SC / PA / RS) at Phase 1 LT;
   **15 of 15** with Phase 2 cycle-accurate variants — full set
   CP / VF / SC / PA / RS / TMU / PFO / TBF / RSV / MMU / L2 / MC /
   CSR / PMU / BIN landed.
+- **Adapters**: SC→PA, PA→RS, RS→PFO, PFO→TBF — single-buffered
+  pointer-passing modules that bridge typed payload boundaries.
+  Full chain (SC → ... → RSV) wired and tested end-to-end.
 - **Flavour-suffix convention**: file + class suffix indicates SystemC
   abstraction level — `_lt` (LT, b_transport) / `_at` (AT, future) /
   `_pv` (PV, future) / `_ca` (cycle-accurate, sc_signal+CTHREAD).
@@ -784,3 +795,87 @@ migration order in [`docs/phase2_kickoff.md`](phase2_kickoff.md).
   their LT / pass-through flavours. Chip-level full-pipeline
   wiring deferred to Phase 2.x where payload-conversion adapter
   blocks land.
+
+## Sprint 29 — SC→PA payload-conversion adapter(`e197bc8`)
+- **Done**:
+  - `blocks/adapters/{include,src}/sc_to_pa_adapter_ca.{h,cpp}` —
+    first Phase-2.x adapter. Bridges SC_ca (emits ShaderJob*) and
+    PA_ca (consumes PrimAssemblyJob*).
+  - Batches `batch_size` (default 3) consecutive ShaderJobs,
+    copies each `outputs` into a host-side staged
+    PrimAssemblyJob's `vs_outputs[i]` slot, then forwards a pointer
+    to the staged job downstream. Single-buffered.
+  - Constructor knobs: batch_size, vp_w, vp_h, cull_back.
+  - Testbench `test_sc_pa_adapter_ca.cpp` (Docker-only): SC_ca runs
+    `mov o0, c0` over 3 ShaderJobs whose c0 are the canonical
+    triangle's clip-space vertices; assert chain output matches the
+    standalone PA_ca test (1 triangle, top y ≈ 27.2 on 32×32 vp).
+- **Tests**: 17/17 local still green.
+- **Out of scope**: multi-buffer adapter for back-to-back triangles;
+  primitive restart; per-vertex non-triangle modes.
+
+## Sprint 30 — PA→RS payload-conversion adapter(`d33bfaf`)
+- **Done**:
+  - `pa_to_rs_adapter_ca.{h,cpp}` — second adapter. Shallow-copies
+    `triangles` from PrimAssemblyJob into a staged RasterJob and
+    stamps fb_w / fb_h / msaa_4x / varying_count from constructor
+    knobs. 1 cyc / repackage placeholder.
+  - Testbench `test_pa_rs_adapter_ca.cpp` (Docker-only): clip-space
+    triangle through PA → adapter → RS with fb=32×32; asserts sink
+    pointer == &adapter.staged() and fragment count in [100, 600]
+    (matching the standalone Sprint-22 RS_ca range).
+- **Tests**: 17/17 local still green.
+- **Out of scope**: triangle batching across multiple PA jobs;
+  per-job fb attribute lookup from a Context*.
+
+## Sprint 31 — RS→PFO payload-conversion adapter(`209cd3c`)
+- **Done**:
+  - `rs_to_pfo_adapter_ca.{h,cpp}` — most complex of the four.
+    Per accepted RasterJob*: walks `fragments`, hashes each by
+    `(qx, qy) = (x>>1, y>>1)` into a `std::map`, lane index =
+    `(y&1)*2 + (x&1)`. Empty lanes default to coverage_mask=0.
+    Converts `gpu::sim::Vec4` (RS varying) → `gpu::Vec4f` (Fragment
+    varying) component-by-component. Emits one PfoJob per non-empty
+    quad sequentially, with `pfo_job_.ctx = adapter.ctx`.
+  - Constructor knob: ctx (gpu::Context*).
+  - Testbench `test_rs_pfo_adapter_ca.cpp` (Docker-only): 32×32 fb,
+    triangle through RS → adapter → PFO; assert RS emitted >0
+    fragments, adapter regrouped >0 quads, sink saw 1 PfoJob* per
+    quad, and quads × 4 ≥ frags.
+- **Tests**: 17/17 local still green.
+- **Out of scope**: derivative computation across quad lanes (needed
+  for gradient-based texture LOD); helper-lane masking.
+
+## Sprint 32 — PFO→TBF tile-flush trigger adapter(`1d6db65`)
+- **Done**:
+  - `pfo_to_tbf_adapter_ca.{h,cpp}` — final adapter. Counts accepted
+    PfoJobs and emits a TileFlushJob covering the full framebuffer
+    after every `quads_per_flush` quads (default 1 = per-quad
+    flush).
+  - PfoJob.ctx is captured into the staged TileFlushJob.ctx.
+  - Testbench `test_pfo_tbf_adapter_ca.cpp` (Docker-only):
+    quads_per_flush=2; push 4 PfoJobs sharing one Context*, assert
+    sink saw 2 TileFlushJobs with ctx and fb dims (16×16) preserved.
+- **Tests**: 17/17 local still green.
+- **Out of scope**: per-tile binning so the flush carries which tile
+  is being resolved; multi-tile flush ordering.
+
+## Sprint 33 — Phase 2.x full-chain end-to-end testbench(`e95b44e`)
+- **Done**:
+  - `tb/test_full_chain_ca.cpp` — wires every CA block + every
+    adapter from Sprints 29–32 (12 modules, 11 hops):
+    `src → SC_ca → SC_to_PA → PA_ca → PA_to_RS → RS_ca →
+     RS_to_PFO → PFO_ca → PFO_to_TBF → TBF_ca → RSV_ca → sink`.
+  - 3 ShaderJobs run `mov o0, c0; mov o1, c1` (position + colour).
+    With c1 = white at every vertex, RS interpolates a constant
+    white varying[0]; PFO packs `(1,1,1,1)` → `0xFFFFFFFF` and
+    writes to fb.color. The test asserts ≥1 TileFlushJob at sink
+    AND ≥100 white pixels in fb.color.
+- **Tests**: 17/17 local still green; gpu_systemc lib compiles.
+- **Phase 2.x milestone**: first runnable proof that all 15 CA
+  blocks + 4 adapters compose into a functional pipeline.
+- **Out of scope (next)**: real pipeline timing (replace the 1-cyc
+  placeholders); CP/VF reintegration so the chain starts at CP
+  instead of SC (currently VF fans out the same opaque pointer N
+  times — needs per-vertex ShaderJob distinct allocation); tile
+  binning so flushes carry tile coords.
