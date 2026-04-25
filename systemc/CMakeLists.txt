@@ -50,6 +50,7 @@ add_library(gpu_systemc STATIC
     blocks/controlstatusregister/src/controlstatusregister_ca.cpp
     blocks/perfmonitorunit/src/perfmonitorunit_ca.cpp
     blocks/tilebinner/src/tilebinner_ca.cpp
+    blocks/adapters/src/sc_to_pa_adapter_ca.cpp
     top/src/gpu_top.cpp
     top/src/gpu_top_ca.cpp
 )
@@ -70,6 +71,7 @@ target_include_directories(gpu_systemc PUBLIC
     blocks/controlstatusregister/include
     blocks/perfmonitorunit/include
     blocks/tilebinner/include
+    blocks/adapters/include
     top/include)
 target_link_libraries(gpu_systemc PUBLIC SystemC::systemc gpu_compiler gpu_sw_ref)
 # SystemC lib is a dylib on macOS; CMake may need the rpath.
@@ -171,5 +173,12 @@ if(GPU_BUILD_TESTS)
             INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
             BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
         add_test(NAME systemc.sidebands_ca COMMAND test_sidebands_ca)
+
+        add_executable(test_sc_pa_adapter_ca tb/test_sc_pa_adapter_ca.cpp)
+        target_link_libraries(test_sc_pa_adapter_ca PRIVATE gpu_systemc)
+        set_target_properties(test_sc_pa_adapter_ca PROPERTIES
+            INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
+            BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
+        add_test(NAME systemc.sc_pa_adapter_ca COMMAND test_sc_pa_adapter_ca)
     endif()
 endif()
