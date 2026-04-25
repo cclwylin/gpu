@@ -2,14 +2,20 @@
 #include <systemc>
 
 #include "gpu_systemc/cp_block.h"
+#include "gpu_systemc/pa_block.h"
 #include "gpu_systemc/sc_block.h"
+#include "gpu_systemc/vf_block.h"
 
 namespace gpu::systemc {
 
-// Top-level integration: just CP -> SC for Sprint 5.
+// Sprint 10 chain:
+//   CP -> VF -> SC      (vertex path: VF runs VS via SC for each vertex)
+//   PA is a sibling target driven directly by the testbench / CP for now.
 SC_MODULE(GpuTop) {
-    CommandProcessor cp;
-    ShaderCore       sc;
+    CommandProcessor   cp;
+    VertexFetch        vf;
+    ShaderCore         sc;
+    PrimitiveAssembly  pa;
 
     SC_HAS_PROCESS(GpuTop);
     explicit GpuTop(sc_core::sc_module_name name);

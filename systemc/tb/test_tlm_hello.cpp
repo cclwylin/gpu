@@ -1,44 +1,89 @@
-// SystemC TLM-LT smoke: assemble a tiny VS, send it through the CP→SC TLM
-// wiring, and check that the SC ran the shader and produced expected outputs.
+// Sprint 10 SystemC TLM smoke: drive the CP -> VF -> SC chain with a small
+// 3-vertex draw, then call PA directly to confirm screen-space transform.
+//
+// Skipped on macOS+GCC due to libc++/libstdc++ ABI mismatch (see
+// systemc/CMakeLists.txt). Runs in the project Docker image.
 
+#include <cmath>
 #include <cstdio>
 #include <systemc>
+#include <tlm.h>
 #include <vector>
 
 #include "gpu_compiler/asm.h"
 #include "gpu_systemc/gpu_top.h"
 
-int sc_main(int argc, char** argv) {
+int sc_main(int /*argc*/, char** /*argv*/) {
     using namespace gpu::systemc;
 
     GpuTop top("top");
 
-    // Tiny shader: o0 = c0 + c1
-    auto a = gpu::asm_::assemble("add o0, c0, c1\n");
+    // Pass-through VS: o0 = r0 (clip pos), o1 = r1 (varying colour).
+    auto a = gpu::asm_::assemble("mov o0, r0\nmov o1, r1\n");
     if (!a.error.empty()) {
         std::fprintf(stderr, "asm err: %s\n", a.error.c_str());
         return 1;
     }
     std::vector<uint64_t> code(a.code.begin(), a.code.end());
 
-    ShaderJob job{};
-    job.code = &code;
-    job.is_vs = true;
-    job.constants[0] = {{1.0f, 2.0f, 3.0f, 4.0f}};
-    job.constants[1] = {{0.5f, 0.5f, 0.5f, 0.5f}};
+    VertexFetchJob vfj{};
+    vfj.vs_code = &code;
+    vfj.attr_count = 2;
+    vfj.vertex_count = 3;
+    vfj.vertices.resize(3);
+    vfj.vertices[0][0] = {{ 0.0f,  0.7f, 0.0f, 1.0f}};
+    vfj.vertices[1][0] = {{-0.7f, -0.7f, 0.0f, 1.0f}};
+    vfj.vertices[2][0] = {{ 0.7f, -0.7f, 0.0f, 1.0f}};
+    vfj.vertices[0][1] = {{1, 0, 0, 1}};
+    vfj.vertices[1][1] = {{0, 1, 0, 1}};
+    vfj.vertices[2][1] = {{0, 0, 1, 1}};
 
-    top.cp.enqueue(&job);
-
+    top.cp.enqueue(&vfj);
     sc_core::sc_start(1, sc_core::SC_MS);
 
-    auto& o = job.outputs[0];
-    bool ok = (std::fabs(o[0] - 1.5f) < 1e-5f) &&
-              (std::fabs(o[1] - 2.5f) < 1e-5f) &&
-              (std::fabs(o[2] - 3.5f) < 1e-5f) &&
-              (std::fabs(o[3] - 4.5f) < 1e-5f);
-    std::printf("SC out = (%g, %g, %g, %g)\n", o[0], o[1], o[2], o[3]);
-    if (!ok) { std::fprintf(stderr, "FAIL\n"); return 1; }
-    std::printf("PASS @ sim time = %s\n",
-                sc_core::sc_time_stamp().to_string().c_str());
+    if (vfj.vs_outputs.size() != 3) {
+        std::fprintf(stderr, "FAIL: vs_outputs size %zu\n", vfj.vs_outputs.size());
+        return 1;
+    }
+    auto near = [](float a, float b) { return std::fabs(a - b) < 1e-5f; };
+    for (int v = 0; v < 3; ++v) {
+        for (int k = 0; k < 4; ++k) {
+            if (!near(vfj.vs_outputs[v][0][k], vfj.vertices[v][0][k])) {
+                std::fprintf(stderr, "FAIL: vs_out[%d][0][%d] = %g vs %g\n",
+                             v, k, vfj.vs_outputs[v][0][k], vfj.vertices[v][0][k]);
+                return 1;
+            }
+        }
+    }
+
+    // Drive PA directly with VS outputs and a 32x32 viewport.
+    PrimAssemblyJob paj{};
+    paj.vs_outputs = vfj.vs_outputs;
+    paj.vp_w = 32; paj.vp_h = 32;
+    paj.cull_back = false;
+
+    tlm::tlm_generic_payload trans;
+    sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
+    trans.set_command(tlm::TLM_WRITE_COMMAND);
+    trans.set_data_ptr(reinterpret_cast<unsigned char*>(&paj));
+    trans.set_data_length(0);
+    trans.set_streaming_width(0);
+    trans.set_byte_enable_ptr(nullptr);
+    trans.set_dmi_allowed(false);
+    trans.set_response_status(tlm::TLM_INCOMPLETE_RESPONSE);
+    top.pa.target->b_transport(trans, delay);
+    if (trans.get_response_status() != tlm::TLM_OK_RESPONSE) {
+        std::fprintf(stderr, "FAIL: PA transaction\n"); return 1;
+    }
+    if (paj.triangles.size() != 1) {
+        std::fprintf(stderr, "FAIL: triangles=%zu\n", paj.triangles.size()); return 1;
+    }
+    // First vertex is at NDC y=+0.7 -> screen y = (0.7*0.5+0.5)*32 = 27.2.
+    float sy0 = paj.triangles[0][0][0][1];
+    if (sy0 < 26.0f || sy0 > 28.0f) {
+        std::fprintf(stderr, "FAIL: PA screen y=%g (expected ~27.2)\n", sy0);
+        return 1;
+    }
+    std::printf("PASS @ %s\n", sc_core::sc_time_stamp().to_string().c_str());
     return 0;
 }
