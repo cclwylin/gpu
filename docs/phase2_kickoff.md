@@ -1,6 +1,6 @@
 ---
 doc: Phase 2 Kickoff
-version: 0.1 (draft)
+version: 0.2 (draft)
 status: in progress (Sprint 18)
 owner: E1
 last_updated: 2026-04-25
@@ -9,35 +9,42 @@ last_updated: 2026-04-25
 # Phase 2 Kickoff — Cycle-Accurate SystemC
 
 Master Plan Phase 2 spans M9–M16 (7 months). Goal: every TLM-LT block
-graduates to a **PV / cycle-approximate / synthesizable-subset** SystemC
-implementation. The Phase 1 LT blocks remain in tree for spec-vs-impl
-co-simulation; Phase 2 blocks add a parallel `*_pv.{h,cpp}` per block
-behind a CMake option.
+graduates to a **cycle-accurate / pin-level / synthesizable-subset**
+SystemC implementation. The Phase 1 LT blocks remain in tree for
+spec-vs-impl co-simulation; Phase 2 blocks add a parallel
+`*_cycleaccurate.{h,cpp}` per block behind a CMake option.
+
+> **Glossary note**: in OSCI / Accellera taxonomy "PV" (Programmer's
+> View) ≈ LT-equivalent. The Phase-2 work targeted here is strictly
+> **CA — Cycle-Accurate** (sc_in/out + SC_CTHREAD + clk + ready/valid).
+> We use `_cycleaccurate` in filenames to be precise. AT (Approximately-
+> Timed, TLM-2.0 nb_transport with phases) is a separate intermediate
+> abstraction we are NOT pursuing.
 
 This Sprint-18 commit lays the **template** with one block (CP):
 
-- `commandprocessor_pv.{h,cpp}` — `SC_CTHREAD` driven by clk + rst_n,
-  ready/valid handshake on the downstream interface, no TLM blocking
-  calls.
-- Testbench (`test_cp_pv.cpp`) exercises the handshake against a tiny
-  `Sink` consumer.
+- `commandprocessor_cycleaccurate.{h,cpp}` — `SC_CTHREAD` driven by
+  clk + rst_n, ready/valid handshake on the downstream interface,
+  no TLM blocking calls.
+- Testbench (`test_commandprocessor_cycleaccurate.cpp`) exercises the
+  handshake against a tiny `Sink` consumer.
 
 ## Naming + layout convention
 
 ```
 systemc/blocks/<blockname>/
-  include/gpu_systemc/<blockname>.h          Phase 1  (TLM-LT, b_transport)
-  include/gpu_systemc/<blockname>_pv.h       Phase 2  (PV, sc_signal + CTHREAD)
+  include/gpu_systemc/<blockname>.h                    Phase 1  (TLM-LT, b_transport)
+  include/gpu_systemc/<blockname>_cycleaccurate.h      Phase 2  (CA, sc_signal + CTHREAD)
   src/<blockname>.cpp
-  src/<blockname>_pv.cpp
+  src/<blockname>_cycleaccurate.cpp
 ```
 
-Both flavours coexist; the top-level instantiates one or the other based
-on a CMake flag (Phase 2.x).
+Both flavours coexist; the top-level instantiates one or the other
+based on a CMake flag (Phase 2.x).
 
 ## Wire-level convention (template)
 
-Every PV block exposes:
+Every cycle-accurate block exposes:
 
 ```cpp
 sc_in <bool>          clk;
@@ -63,30 +70,34 @@ i.e. active-low async reset deassertion sync. Matches
 
 ## Migration order (proposal — Phase 2 sprints)
 
+Each sprint converts the named block from TLM-LT to cycle-accurate.
+
 | Sprint | Block | Reason for ordering |
 |---|---|---|
-| 19 | CP done; **VF** PV | Linear-pipeline producer side |
-| 20 | **SC** PV | Largest block; must land early to unblock real timing |
-| 21 | **PA** PV | Small, mostly arithmetic |
-| 22 | **RS** PV | Heavy logic; per-pixel rate model |
-| 23 | **TMU** + **L1 Tex$** PV | Adds memory subsystem entrypoint |
-| 24 | **PFO** PV | depth/stencil/blend timing |
-| 25 | **TBF** + **RSV** PV | tile buffer SRAM model + resolve |
-| 26 | **MMU** + **L2** + **MC** PV | end of internal datapath |
-| 27 | **CSR** + **PMU** PV | non-pipeline sidebands |
-| 28 | Co-sim of full PV chip vs sw_ref / TLM | Phase 2 exit gate |
+| 19 | CP done; **VF** | Linear-pipeline producer side |
+| 20 | **SC** | Largest block; must land early to unblock real timing |
+| 21 | **PA** | Small, mostly arithmetic |
+| 22 | **RS** | Heavy logic; per-pixel rate model |
+| 23 | **TMU** + **L1 Tex$** | Adds memory subsystem entrypoint |
+| 24 | **PFO** | depth/stencil/blend timing |
+| 25 | **TBF** + **RSV** | tile buffer SRAM model + resolve |
+| 26 | **MMU** + **L2** + **MC** | end of internal datapath |
+| 27 | **CSR** + **PMU** | non-pipeline sidebands |
+| 28 | Co-sim of full cycle-accurate chip vs sw_ref / TLM | Phase 2 exit gate |
 
 ## Co-simulation strategy
 
-- Each block has both LT and PV implementations.
-- Top-level CMake flag selects the build (`-DGPU_SYSTEMC_FLAVOR=lt|pv`).
+- Each block has both LT and cycle-accurate implementations.
+- Top-level CMake flag selects the build
+  (`-DGPU_SYSTEMC_FLAVOR=lt|cycleaccurate`).
 - Reference runs (sw_ref ↔ TLM-LT framebuffer pixel-exact) are the
-  Phase-1 invariant. PV chip must produce identical pixels to LT chip
-  on the conformance corpus, plus pass cycle-count regression caps.
+  Phase-1 invariant. The cycle-accurate chip must produce identical
+  pixels to LT chip on the conformance corpus, plus pass cycle-count
+  regression caps.
 
 ## Phase 2 exit criteria (Master Plan §C)
 
-- All blocks PV.
+- All blocks cycle-accurate.
 - Co-sim chain `cp.cmd_in → … → fb` matches sw_ref FB to RGBA8 bit
   exactness on the conformance scene set.
 - Cycle counts within ±5% of design targets per the architecture spec.
@@ -94,9 +105,9 @@ i.e. active-low async reset deassertion sync. Matches
 
 ## Out of scope for Sprint 18
 
-- Wiring the PV CP into `gpu_top` (PV top is a Sprint 19+ task once VF
-  also has a PV variant; otherwise the chain is half-LT half-PV which
-  doesn't serve a purpose).
+- Wiring the cycle-accurate CP into `gpu_top` (a Sprint 19+ task once
+  VF also has a cycle-accurate variant; otherwise the chain is
+  half-LT half-cycle-accurate which doesn't serve a purpose).
 - Rich timing model (latency / FIFOs sized per spec). The Sprint-18 CP
   does back-to-back ready/valid; that's a placeholder.
 - Coverage / formal hooks (Phase 2.x).

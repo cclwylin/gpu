@@ -52,27 +52,29 @@ itself — `git show <sha>`.
 | 23 | `142bd77` | Phase 1 / Sprint 15  | conformance harness — golden PPM RMSE diff |
 | 24 | `619884c` | Phase 1 / Sprint 16  | sw_ref/fp: first cut at HW-aligned transcendentals |
 | 25 | `6eea98c` | Phase 1 / Sprint 17  | sw_ref: stencil + scissor + alpha-to-coverage |
-| 26 | `ca5db3b` | Phase 2 / Sprint 18  | Phase 2 kickoff — CP cycle-accurate PV template |
+| 26 | `ca5db3b` | Phase 2 / Sprint 18  | Phase 2 kickoff — CP cycle-accurate template |
 
 ---
 
 ## Status snapshot
 
-- **Master Plan phase**: **Phase 2 kickoff** (Sprint 18 lands first PV
-  cycle-accurate template; Phase 1 LT chain still the production path)
+- **Master Plan phase**: **Phase 2 kickoff** (Sprint 18 lands first
+  cycle-accurate block template; Phase 1 LT chain still the production
+  path)
 - **Tests passing**: 17/17 (CTest, local macOS / GCC-15)
   - `compiler.{asm_roundtrip, sim_basic, glsl_compile, sim_warp,
     warp_break, glsl_ext, spv_lower}`
   - `sw_ref.{basic, fp, isa_triangle, msaa, texture, pfo,
     stencil_scissor}`
   - `conformance.{triangle_white, triangle_msaa, triangle_rgb}`
-  - Skipped (Docker-only): `systemc.tlm_hello`, `systemc.cp_pv`,
-    `compiler.glsl_to_spv`
+  - Skipped (Docker-only): `systemc.tlm_hello`,
+    `systemc.commandprocessor_cycleaccurate`, `compiler.glsl_to_spv`
 - **ISA**: v1.1 frozen (MEM class bits + per-lane break formalised)
 - **TLM blocks**: 5 of 15 (CP / VF / SC / PA / RS) at Phase 1 LT;
-  CP additionally has Phase 2 PV variant
-- **Optional gates**: `-DGPU_BUILD_SYSTEMC=ON` (TLM chain + PV CP),
-  `-DGPU_BUILD_GLSLANG=ON` (glslang FetchContent, GLSL → SPIR-V)
+  CP additionally has Phase 2 cycle-accurate variant
+- **Optional gates**: `-DGPU_BUILD_SYSTEMC=ON` (TLM chain +
+  cycle-accurate CP), `-DGPU_BUILD_GLSLANG=ON` (glslang FetchContent,
+  GLSL → SPIR-V)
 - **Repo**: https://github.com/cclwylin/gpu (SSH origin)
 
 ---
@@ -270,7 +272,7 @@ finishing one track first.
 
 | Topic | Notes |
 |---|---|
-| **Phase 2: 14 remaining blocks → PV** | Sprint 18 landed CP PV template. Sprints 19–28 walk it across VF / SC / PA / RS / TMU / PFO / TBF / RSV / MMU / L2 / MC / CSR / PMU per `docs/phase2_kickoff.md`. |
+| **Phase 2: 14 remaining blocks → cycle-accurate** | Sprint 18 landed CP cycle-accurate template. Sprints 19–28 walk it across VF / SC / PA / RS / TMU / PFO / TBF / RSV / MMU / L2 / MC / CSR / PMU per `docs/phase2_kickoff.md`. |
 | **TMU + L1 Tex$ (TLM)** | Phase-1 LT side: TMU still missing as a SystemC block (only sw_ref texture path exists). |
 | **PFO / TBF / RSV (TLM)** | Same — TLM-LT counterparts not yet written. |
 | **MMU / L2 / MC / CSR / PMU (TLM)** | Memory subsystem + sidebands. |
@@ -481,28 +483,37 @@ finishing one track first.
 ## Phase 2 — Cycle-Accurate SystemC
 
 Master Plan Phase 2 spans M9–M16 (7 months). Each Phase-1 LT block
-gets a parallel `<blockname>_pv.{h,cpp}` PV implementation; both
-flavours coexist; top-level CMake flag picks the build (Phase 2.x).
-Detailed plan + naming + handshake convention + migration order in
-[`docs/phase2_kickoff.md`](phase2_kickoff.md).
+gets a parallel `<blockname>_cycleaccurate.{h,cpp}` cycle-accurate
+implementation; both flavours coexist; top-level CMake flag picks the
+build (Phase 2.x). Detailed plan + naming + handshake convention +
+migration order in [`docs/phase2_kickoff.md`](phase2_kickoff.md).
+
+> **Note on terminology**: earlier internal shorthand used "PV" for
+> the cycle-accurate flavour. That was inaccurate ("PV" / Programmer's
+> View in OSCI taxonomy ≈ LT-equivalent). Renamed everywhere to
+> `_cycleaccurate` / `CommandProcessorCycleAccurate` /
+> `systemc.commandprocessor_cycleaccurate` for precision.
 
 ## Sprint 18 — Phase 2 kickoff(`ca5db3b`)
 - **Done**:
-  - `commandprocessor_pv.{h,cpp}` — first PV-flavour block. SC_CTHREAD
-    synchronous to `clk.pos()`, async-deassert reset via
-    `reset_signal_is(rst_n, false)`. Wire-level interface: sc_in/out
-    + ready/valid + 64-bit data signal. Same `enqueue()` driver-side
-    API as the LT variant.
-  - `tb/test_cp_pv.cpp` (`sc_main`): sc_clock @ 10 ns + tiny Sink
-    consumer that always asserts ready and records data words.
-    Enqueue 3 jobs, run, assert sink saw all 3 with correct data.
+  - `commandprocessor_cycleaccurate.{h,cpp}` — first cycle-accurate
+    block. SC_CTHREAD synchronous to `clk.pos()`, async-deassert
+    reset via `reset_signal_is(rst_n, false)`. Wire-level interface:
+    sc_in/out + ready/valid + 64-bit data signal. Same `enqueue()`
+    driver-side API as the LT variant.
+  - `tb/test_commandprocessor_cycleaccurate.cpp` (`sc_main`):
+    sc_clock @ 10 ns + tiny Sink consumer that always asserts ready
+    and records data words. Enqueue 3 jobs, run, assert sink saw all
+    3 with correct data.
   - `docs/phase2_kickoff.md`: full Phase 2 plan — coexistence pattern,
     sc_in/out + CTHREAD + ready/valid convention, Sprint 19–28
     migration order across the remaining 14 blocks, co-sim strategy
-    (-DGPU_SYSTEMC_FLAVOR=lt|pv at top), exit criteria.
+    (`-DGPU_SYSTEMC_FLAVOR=lt|cycleaccurate` at top), exit criteria.
 - **Tests**: 17/17 non-SystemC still green. `gpu_systemc` library
-  compiles cleanly with the PV CP added; testbench runs in Docker.
+  compiles cleanly with the cycle-accurate CP added; testbench runs
+  in Docker.
 - **Out of scope (next sprints)**: VF / SC / PA / RS / TMU / PFO /
-  TBF / RSV / MMU / L2 / MC / CSR / PMU all still need PV variants.
-  Top-level chain doesn't yet route through the PV CP (waits for at
-  least one downstream PV block — Sprint 19).
+  TBF / RSV / MMU / L2 / MC / CSR / PMU all still need cycle-accurate
+  variants. Top-level chain doesn't yet route through the
+  cycle-accurate CP (waits for at least one downstream cycle-accurate
+  block — Sprint 19).

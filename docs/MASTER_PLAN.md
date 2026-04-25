@@ -195,7 +195,7 @@ Deliverables:
 
 ### Phase 2 — Cycle-Accurate SystemC(M9 – M16,7 mo)
 
-- 所有 block → PV / AT,pin-level,synthesizable subset coding
+- 所有 block → cycle-accurate(`sc_signal` + `SC_CTHREAD` + clk + ready/valid),pin-level,synthesizable subset coding
 - FIFO / arbiter / back-pressure / pipeline stage 實體化
 - Tile buffer 64 KB 分 bank,per-sample access pattern
 - ROP 4× wide pipeline 設計(bank conflict 處理)
@@ -209,7 +209,7 @@ Deliverables:
 
 ### Phase 3 — RTL Conversion(M16 – M23.5,7.5 mo)
 
-- 手寫 Verilog,SystemC PV 當 golden reference
+- 手寫 Verilog,SystemC cycle-accurate model 當 golden reference
 - Block-by-block UVM equivalence check
 - Formal verification:CP FSM / arbiter / MMU / resolve control
 - ROP 4× wide timing closure(預期 critical path)
