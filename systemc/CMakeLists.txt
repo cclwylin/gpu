@@ -42,6 +42,8 @@ add_library(gpu_systemc STATIC
     blocks/rasterizer/src/rasterizer_ca.cpp
     blocks/textureunit/src/textureunit_ca.cpp
     blocks/perfragmentops/src/perfragmentops_ca.cpp
+    blocks/tilebuffer/src/tilebuffer_ca.cpp
+    blocks/resolveunit/src/resolveunit_ca.cpp
     top/src/gpu_top.cpp
     top/src/gpu_top_ca.cpp
 )
@@ -54,6 +56,8 @@ target_include_directories(gpu_systemc PUBLIC
     blocks/rasterizer/include
     blocks/textureunit/include
     blocks/perfragmentops/include
+    blocks/tilebuffer/include
+    blocks/resolveunit/include
     top/include)
 target_link_libraries(gpu_systemc PUBLIC SystemC::systemc gpu_compiler gpu_sw_ref)
 # SystemC lib is a dylib on macOS; CMake may need the rpath.
@@ -134,5 +138,12 @@ if(GPU_BUILD_TESTS)
             INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
             BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
         add_test(NAME systemc.pfo_ca COMMAND test_perfragmentops_ca)
+
+        add_executable(test_tilebuffer_resolve_ca tb/test_tilebuffer_resolve_ca.cpp)
+        target_link_libraries(test_tilebuffer_resolve_ca PRIVATE gpu_systemc)
+        set_target_properties(test_tilebuffer_resolve_ca PROPERTIES
+            INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
+            BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
+        add_test(NAME systemc.tbf_rsv_ca COMMAND test_tilebuffer_resolve_ca)
     endif()
 endif()

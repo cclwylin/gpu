@@ -71,6 +71,16 @@ struct PfoJob {
     const gpu::Quad*  quad = nullptr;
 };
 
+// Sprint 26 TileFlushJob — passes a tile-resident Context* through
+// TBF_ca (storage placeholder) and RSV_ca (gpu::pipeline::resolve
+// wrapper). Tile bbox is informational; the resolve operates on the
+// whole framebuffer for now.
+struct TileFlushJob {
+    gpu::Context* ctx = nullptr;
+    int tile_x = 0, tile_y = 0;
+    int tile_w = 16, tile_h = 16;
+};
+
 // Sprint 24 TextureJob — batch of (u,v) sample requests against one
 // bound texture; results land in `samples` in order.
 struct TextureSample { float u = 0.0f, v = 0.0f; };
