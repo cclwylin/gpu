@@ -230,15 +230,13 @@ int sc_main(int argc, char** argv) {
     pa_rs.fb_w = scene.width; pa_rs.fb_h = scene.height;
     pa_rs.msaa_4x = scene.msaa;
     pa_rs.varying_count = 1;
-    // Per-quad flush gives the maximum cycle resolution but quickly
-    // bogs the chain at high resolution because the placeholder TBF/RSV
-    // latencies scale with tile_w × tile_h. Auto-batch: aim for at most
-    // ~256 flushes per frame regardless of triangle count. Override via
-    // SC_QUADS_PER_FLUSH env var.
-    int qpf = 1;
-    if (const char* e = std::getenv("SC_QUADS_PER_FLUSH")) qpf = std::max(1, std::atoi(e));
-    else if (scene.width * scene.height >= 16384) qpf = (scene.width * scene.height) / 256;
-    pfo_tbf.quads_per_flush = qpf;
+    // Per-quad flush — TBF is flat-cost and RSV is no-op when not MSAA,
+    // so each flush is ~30 cycles. Avoids end-of-frame residue (the
+    // batched form would leave the trailing < quads_per_flush quads
+    // stuck inside PFO_to_TBF). Override via SC_QUADS_PER_FLUSH.
+    pfo_tbf.quads_per_flush = 1;
+    if (const char* e = std::getenv("SC_QUADS_PER_FLUSH"))
+        pfo_tbf.quads_per_flush = std::max(1, std::atoi(e));
 
     src.clk(clk); src.rst_n(rst_n);
     src.valid(s0_valid); src.ready(s0_ready); src.data(s0_data);

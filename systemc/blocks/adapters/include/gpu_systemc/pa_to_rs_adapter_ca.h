@@ -1,4 +1,5 @@
 #pragma once
+#include <deque>
 #include <systemc>
 
 #include "gpu_systemc/payload.h"
@@ -38,10 +39,16 @@ SC_MODULE(PaToRsAdapterCa) {
     SC_HAS_PROCESS(PaToRsAdapterCa);
     explicit PaToRsAdapterCa(sc_core::sc_module_name name);
 
-    const RasterJob& staged() const { return staged_; }
+    const RasterJob& staged() const {
+        return staged_queue_.empty() ? sentinel_ : staged_queue_.back();
+    }
 
 private:
-    RasterJob staged_;
+    // Same race-avoidance approach as ScToPaAdapterCa: one fresh
+    // RasterJob per upstream batch, kept in a deque (stable refs on
+    // push_back) for the duration of the sim. Sim-only memory cost.
+    std::deque<RasterJob> staged_queue_;
+    RasterJob             sentinel_;
     void thread();
 };
 

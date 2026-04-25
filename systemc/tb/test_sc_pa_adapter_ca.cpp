@@ -131,10 +131,11 @@ int sc_main(int /*argc*/, char** /*argv*/) {
         return 1;
     }
     const auto* paj = reinterpret_cast<const PrimAssemblyJob*>(sink.seen[0]);
-    if (paj != &adp.staged()) {
-        std::fprintf(stderr, "FAIL: sink ptr != adapter.staged\n");
-        return 1;
-    }
+    // (Sprint 39: dropped the pointer-equality check against
+    // adp.staged(); with multi-buffered storage the adapter has
+    // already started a fresh slot for the next batch by the time
+    // we get here, so back() doesn't match what the sink received.
+    // The functional checks below still pin the result tightly.)
     if (paj->triangles.size() != 1u) {
         std::fprintf(stderr, "FAIL: triangles = %zu (expected 1)\n", paj->triangles.size());
         return 1;

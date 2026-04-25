@@ -1,4 +1,5 @@
 #pragma once
+#include <deque>
 #include <systemc>
 #include <vector>
 
@@ -47,8 +48,12 @@ SC_MODULE(RsToPfoAdapterCa) {
     size_t emitted_quads() const { return staged_quads_.size(); }
 
 private:
-    std::vector<gpu::Quad> staged_quads_;
-    PfoJob                 pfo_job_;
+    // std::deque, not std::vector — across multiple upstream RasterJobs
+    // PFO may still hold a pointer to a previous-batch Quad while the
+    // adapter is laying down the next batch. Clearing/reallocating a
+    // vector under those reads segfaults in many-triangle scenes.
+    std::deque<gpu::Quad> staged_quads_;
+    std::deque<PfoJob>    pfo_jobs_;
     void thread();
 };
 

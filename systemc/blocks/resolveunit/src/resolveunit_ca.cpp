@@ -32,8 +32,14 @@ void ResolveUnitCa::thread() {
 
         if (job && job->ctx) {
             gpu::pipeline::resolve(*job->ctx);
-            const int n = job->ctx->fb.width * job->ctx->fb.height;
-            for (int i = 0; i < n; ++i) wait();
+            // Cycle placeholder: 1 cycle / pixel, but only when MSAA is
+            // on (gpu::pipeline::resolve is a no-op otherwise; charging
+            // cycles to a no-op forces the chain to wall-clock-stall on
+            // every flush even for 1× scenes).
+            if (job->ctx->fb.msaa_4x) {
+                const int n = job->ctx->fb.width * job->ctx->fb.height;
+                for (int i = 0; i < n; ++i) wait();
+            }
         }
 
         out_valid_o.write(true);

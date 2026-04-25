@@ -28,16 +28,17 @@ void PaToRsAdapterCa::thread() {
             reinterpret_cast<PrimAssemblyJob*>(job_word);
         job_ready_o.write(false);
 
-        staged_ = RasterJob{};
-        staged_.fb_w = fb_w;
-        staged_.fb_h = fb_h;
-        staged_.msaa_4x = msaa_4x;
-        staged_.varying_count = varying_count;
-        if (pa_job) staged_.triangles = pa_job->triangles;
+        staged_queue_.emplace_back();
+        RasterJob& staged = staged_queue_.back();
+        staged.fb_w = fb_w;
+        staged.fb_h = fb_h;
+        staged.msaa_4x = msaa_4x;
+        staged.varying_count = varying_count;
+        if (pa_job) staged.triangles = pa_job->triangles;
         wait();   // 1 cycle / repackage placeholder
 
         out_valid_o.write(true);
-        out_data_o.write(reinterpret_cast<uint64_t>(&staged_));
+        out_data_o.write(reinterpret_cast<uint64_t>(&staged));
         wait();
         while (!out_ready_i.read()) wait();
         out_valid_o.write(false);

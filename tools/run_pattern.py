@@ -192,7 +192,8 @@ def run_example(args, c_path: Path) -> int:
     sc_bin = build_dir / "tests" / "conformance" / "sc_pattern_runner"
     sc_kv: dict[str, str] = {}
     if sc_bin.is_file() and scene_out.is_file():
-        env.setdefault("SC_FB_MAX", str(args.sc_fb_max))
+        if args.sc_fb_max > 0:
+            env.setdefault("SC_FB_MAX", str(args.sc_fb_max))
         rc = run([sc_bin, scene_out, sc_ppm], env=env)
         if rc.returncode != 0:
             print("SC chain FAILED:")
@@ -247,9 +248,11 @@ def main() -> int:
     ap.add_argument("pattern", nargs="?")
     ap.add_argument("--build-dir", default="build")
     ap.add_argument("--list", action="store_true")
-    ap.add_argument("--sc-fb-max", type=int, default=64,
-                    help="Cap SC-chain framebuffer size per side (default 64; "
-                         "TBF/RSV cycle placeholders scale with tile area)")
+    ap.add_argument("--sc-fb-max", type=int, default=0,
+                    help="Optional cap on SC-chain framebuffer size per side. "
+                         "Default 0 (no cap) — scene runs at sw_ref resolution "
+                         "for an apples-to-apples RMSE. Drop to 64 for "
+                         "many-triangle scenes if SC sim is slow.")
     args = ap.parse_args()
 
     if args.list or args.pattern is None:

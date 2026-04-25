@@ -49,18 +49,24 @@ void RsToPfoAdapterCa::thread() {
                 frag.varying_count = static_cast<uint8_t>(rj->varying_count);
             }
         }
-        staged_quads_.clear();
-        staged_quads_.reserve(bucket.size());
+        // Append this batch's quads to the deque. Old entries from
+        // previous batches stay alive — PFO may still be dereferencing
+        // their pointers as we lay down the new batch.
+        const size_t base = staged_quads_.size();
         for (auto& kv : bucket) staged_quads_.push_back(std::move(kv.second));
+        for (size_t i = base; i < staged_quads_.size(); ++i) {
+            pfo_jobs_.emplace_back();
+            pfo_jobs_.back().ctx  = ctx;
+            pfo_jobs_.back().quad = &staged_quads_[i];
+        }
 
         wait();   // 1 cycle / regroup placeholder
 
-        // ---- emit one PfoJob per quad ----
-        for (auto& q : staged_quads_) {
-            pfo_job_.ctx  = ctx;
-            pfo_job_.quad = &q;
+        // ---- emit one PfoJob per quad just appended ----
+        for (size_t i = base; i < staged_quads_.size(); ++i) {
+            PfoJob& pj = pfo_jobs_[i];
             out_valid_o.write(true);
-            out_data_o.write(reinterpret_cast<uint64_t>(&pfo_job_));
+            out_data_o.write(reinterpret_cast<uint64_t>(&pj));
             wait();
             while (!out_ready_i.read()) wait();
             out_valid_o.write(false);

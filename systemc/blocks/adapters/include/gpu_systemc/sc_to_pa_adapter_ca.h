@@ -1,4 +1,5 @@
 #pragma once
+#include <deque>
 #include <systemc>
 
 #include "gpu_systemc/payload.h"
@@ -45,10 +46,18 @@ SC_MODULE(ScToPaAdapterCa) {
     explicit ScToPaAdapterCa(sc_core::sc_module_name name);
 
     // Read-only handle to the staged job — useful for tb assertions.
-    const PrimAssemblyJob& staged() const { return staged_; }
+    const PrimAssemblyJob& staged() const {
+        return staged_queue_.empty() ? sentinel_ : staged_queue_.back();
+    }
 
 private:
-    PrimAssemblyJob staged_;
+    // One PrimAssemblyJob per batch — single-buffered storage was racing
+    // with PA_to_RS's read at the same delta-cycle. std::deque (not
+    // vector) so push_back never invalidates the pointers we've already
+    // handed downstream. Grows for the lifetime of the simulation —
+    // sim-only memory cost.
+    std::deque<PrimAssemblyJob> staged_queue_;
+    PrimAssemblyJob             sentinel_;
     void thread();
 };
 
