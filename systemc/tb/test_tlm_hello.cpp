@@ -56,34 +56,50 @@ int sc_main(int /*argc*/, char** /*argv*/) {
         }
     }
 
+    auto post = [](auto& target_socket, void* job) {
+        tlm::tlm_generic_payload trans;
+        sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
+        trans.set_command(tlm::TLM_WRITE_COMMAND);
+        trans.set_data_ptr(reinterpret_cast<unsigned char*>(job));
+        trans.set_data_length(0);
+        trans.set_streaming_width(0);
+        trans.set_byte_enable_ptr(nullptr);
+        trans.set_dmi_allowed(false);
+        trans.set_response_status(tlm::TLM_INCOMPLETE_RESPONSE);
+        target_socket->b_transport(trans, delay);
+        return trans.get_response_status() == tlm::TLM_OK_RESPONSE;
+    };
+
     // Drive PA directly with VS outputs and a 32x32 viewport.
     PrimAssemblyJob paj{};
     paj.vs_outputs = vfj.vs_outputs;
     paj.vp_w = 32; paj.vp_h = 32;
     paj.cull_back = false;
-
-    tlm::tlm_generic_payload trans;
-    sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
-    trans.set_command(tlm::TLM_WRITE_COMMAND);
-    trans.set_data_ptr(reinterpret_cast<unsigned char*>(&paj));
-    trans.set_data_length(0);
-    trans.set_streaming_width(0);
-    trans.set_byte_enable_ptr(nullptr);
-    trans.set_dmi_allowed(false);
-    trans.set_response_status(tlm::TLM_INCOMPLETE_RESPONSE);
-    top.pa.target->b_transport(trans, delay);
-    if (trans.get_response_status() != tlm::TLM_OK_RESPONSE) {
+    if (!post(top.pa.target, &paj)) {
         std::fprintf(stderr, "FAIL: PA transaction\n"); return 1;
     }
     if (paj.triangles.size() != 1) {
         std::fprintf(stderr, "FAIL: triangles=%zu\n", paj.triangles.size()); return 1;
     }
-    // First vertex is at NDC y=+0.7 -> screen y = (0.7*0.5+0.5)*32 = 27.2.
     float sy0 = paj.triangles[0][0][0][1];
     if (sy0 < 26.0f || sy0 > 28.0f) {
         std::fprintf(stderr, "FAIL: PA screen y=%g (expected ~27.2)\n", sy0);
         return 1;
     }
+
+    // Drive RS with PA's screen-space triangle.
+    RasterJob rj{};
+    rj.triangles = paj.triangles;
+    rj.fb_w = 32; rj.fb_h = 32;
+    rj.varying_count = 1;     // VS emitted o0 (pos) + o1 (varying[0])
+    if (!post(top.rs.target, &rj)) {
+        std::fprintf(stderr, "FAIL: RS transaction\n"); return 1;
+    }
+    if (rj.fragments.empty()) {
+        std::fprintf(stderr, "FAIL: RS produced no fragments\n"); return 1;
+    }
+    std::printf("RS emitted %zu fragments\n", rj.fragments.size());
+
     std::printf("PASS @ %s\n", sc_core::sc_time_stamp().to_string().c_str());
     return 0;
 }

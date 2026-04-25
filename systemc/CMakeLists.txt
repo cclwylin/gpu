@@ -34,6 +34,7 @@ add_library(gpu_systemc STATIC
     blocks/shadercore/src/shadercore.cpp
     blocks/vertexfetch/src/vertexfetch.cpp
     blocks/primitiveassembly/src/primitiveassembly.cpp
+    blocks/rasterizer/src/rasterizer.cpp
     top/src/gpu_top.cpp
 )
 target_include_directories(gpu_systemc PUBLIC
@@ -42,6 +43,7 @@ target_include_directories(gpu_systemc PUBLIC
     blocks/shadercore/include
     blocks/vertexfetch/include
     blocks/primitiveassembly/include
+    blocks/rasterizer/include
     top/include)
 target_link_libraries(gpu_systemc PUBLIC SystemC::systemc gpu_compiler)
 # SystemC lib is a dylib on macOS; CMake may need the rpath.

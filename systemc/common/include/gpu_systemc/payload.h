@@ -43,4 +43,19 @@ struct PrimAssemblyJob {
     std::vector<std::array<std::array<gpu::sim::Vec4, 4>, 3>> triangles;
 };
 
+// Sprint 14 RasterJob — screen-space triangles in, per-pixel fragments out.
+struct RasterFragment {
+    int     x, y;
+    uint8_t coverage_mask;     // 4-bit when msaa_4x, else 1-bit
+    float   depth;
+    std::array<gpu::sim::Vec4, 4> varying;     // interpolated VS o1..o4
+};
+struct RasterJob {
+    std::vector<std::array<std::array<gpu::sim::Vec4, 4>, 3>> triangles;
+    int  fb_w = 0, fb_h = 0;
+    bool msaa_4x = false;
+    int  varying_count = 0;
+    std::vector<RasterFragment> fragments;     // populated by RS
+};
+
 }  // namespace gpu::systemc
