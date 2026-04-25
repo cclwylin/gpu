@@ -52,6 +52,7 @@ add_library(gpu_systemc STATIC
     blocks/tilebinner/src/tilebinner_ca.cpp
     blocks/adapters/src/sc_to_pa_adapter_ca.cpp
     blocks/adapters/src/pa_to_rs_adapter_ca.cpp
+    blocks/adapters/src/rs_to_pfo_adapter_ca.cpp
     top/src/gpu_top.cpp
     top/src/gpu_top_ca.cpp
 )
@@ -188,5 +189,12 @@ if(GPU_BUILD_TESTS)
             INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
             BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
         add_test(NAME systemc.pa_rs_adapter_ca COMMAND test_pa_rs_adapter_ca)
+
+        add_executable(test_rs_pfo_adapter_ca tb/test_rs_pfo_adapter_ca.cpp)
+        target_link_libraries(test_rs_pfo_adapter_ca PRIVATE gpu_systemc)
+        set_target_properties(test_rs_pfo_adapter_ca PROPERTIES
+            INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
+            BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
+        add_test(NAME systemc.rs_pfo_adapter_ca COMMAND test_rs_pfo_adapter_ca)
     endif()
 endif()
