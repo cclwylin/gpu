@@ -10,6 +10,7 @@ add_library(gpu_sw_ref STATIC
     src/pipeline/per_fragment_ops.cpp
     src/pipeline/resolve.cpp
     src/pipeline/pipeline.cpp
+    src/pipeline/texture.cpp
     src/trace/trace.cpp
     src/gl_api/gl_api.cpp
 )

@@ -2,6 +2,7 @@
 #include <array>
 #include <cstdint>
 
+#include "texture.h"
 #include "types.h"
 
 namespace gpu {
@@ -64,6 +65,8 @@ struct Context {
     BoundShaderPair shaders;
     std::array<VertexAttribBinding, 8> attribs{};
     Framebuffer fb;
+    // Bound textures by slot (matches ISA `tex N` binding index).
+    std::array<const Texture*, 16> textures{};
 };
 
 }  // namespace gpu

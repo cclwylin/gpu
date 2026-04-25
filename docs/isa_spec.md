@@ -105,9 +105,18 @@ vec4 ALU with full 8-bit swizzle、source modifier、per-lane predication。
 └────────┴─────┴─────┴────┴─────┴─────┴─────┴─────┴─────┘
 ```
 
+- `dst`:GPR-only(目前無 dst_class bit)
+- `src`:GPR-only(目前無 src_class bit)
 - `tex`:texture binding slot 0..15
 - `mode`:0=plain / 1=bias / 2=LOD / 3=gradient(對 tex);0=ld / 1=st(對 mem)
 - `imm`:27-bit signed offset
+
+**Known gap(下一版要補)**:MEM format 缺 `dst_class` + `src_class` 共 2 bit。
+目前 compiler 須:
+- `tex` 之前先 `mov r_uv, v_in`(把 varying 拉到 GPR)
+- `tex` 之後 `mov o_n, r_dst`(把結果搬到 output)
+
+從 `imm` 偷 2 bit 可解(textures 不需 27-bit offset),留下個 ISA 修訂。
 
 ### 3.4 Swizzle Encoding(8-bit)
 
