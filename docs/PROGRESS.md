@@ -1,7 +1,7 @@
 ---
 doc: Progress Log
 purpose: Human-readable index of what shipped per commit, mapped to Master Plan milestones.
-last_updated: 2026-04-25 (Sprint 21 — PA cycle-accurate)
+last_updated: 2026-04-25 (Sprint 22 — RS cycle-accurate; vertex pipeline 5/5 CA)
 ---
 
 # PROGRESS.md
@@ -59,6 +59,7 @@ itself — `git show <sha>`.
 | 30 | `b27ea5f` | Phase 2 / Sprint 19 | systemc: VertexFetch cycle-accurate block (VF_ca) |
 | 31 | `aa4265a` | Phase 2 / Sprint 20 | systemc: ShaderCore cycle-accurate block (SC_ca) |
 | 32 | `b408dcf` | Phase 2 / Sprint 21 | systemc: PrimitiveAssembly cycle-accurate (PA_ca) |
+| 33 | `e481719` | Phase 2 / Sprint 22 | systemc: Rasterizer cycle-accurate (RS_ca) |
 
 ---
 
@@ -75,10 +76,11 @@ itself — `git show <sha>`.
   - `conformance.{triangle_white, triangle_msaa, triangle_rgb}`
   - Skipped (Docker-only): `systemc.tlm_hello`,
     `systemc.cp_ca`, `systemc.vf_ca`, `systemc.sc_ca`, `systemc.pa_ca`,
-    `compiler.glsl_to_spv`
+    `systemc.rs_ca`, `compiler.glsl_to_spv`
 - **ISA**: v1.1 frozen (MEM class bits + per-lane break formalised)
 - **TLM blocks**: 5 of 15 (CP / VF / SC / PA / RS) at Phase 1 LT;
-  **4** with Phase 2 cycle-accurate variants (CP, VF, SC, PA)
+  **5** with Phase 2 cycle-accurate variants — **complete vertex
+  pipeline CP / VF / SC / PA / RS now exists in CA**
 - **Flavour-suffix convention**: file + class suffix indicates SystemC
   abstraction level — `_lt` (LT, b_transport) / `_at` (AT, future) /
   `_pv` (PV, future) / `_ca` (cycle-accurate, sc_signal+CTHREAD).
@@ -625,3 +627,27 @@ migration order in [`docs/phase2_kickoff.md`](phase2_kickoff.md).
 - **Out of scope**: clipping (near/far plane), strip / fan primitive
   modes (LT block already does these; CA copy currently TRIANGLES-
   only).
+
+## Sprint 22 — Rasterizer cycle-accurate(`e481719`)
+- **Done**:
+  - `rasterizer_ca.{h,cpp}` — fifth and final cycle-accurate block
+    of the vertex pipeline. Per accepted RasterJob: edge-function
+    rasterisation (1× and 4× MSAA paths matching the LT impl,
+    D3D rotated-grid pattern), per-pixel-centre barycentric for
+    varying / depth, populate `job->fragments` in place, forward.
+  - Timing placeholder: 1 cycle / fragment.
+  - Testbench `test_rasterizer_ca.cpp` (Docker-only): build a
+    32×32 RasterJob with one screen-space triangle covering ~half
+    the framebuffer, push, assert fragment count in [100, 600] and
+    first fragment has coverage_mask == 0x1.
+  - With this commit, the **complete vertex pipeline** CP → VF →
+    SC → PA → RS now exists in cycle-accurate form alongside the
+    Phase-1 LT versions. Top-level chain wiring becomes mostly
+    mechanical from here; the next milestone is integrating the
+    five into a single `gpu_top_ca`.
+- **Tests**: 17/17 non-SystemC still green; gpu_systemc lib
+  compiles.
+- **Out of scope**: per-tile binning, hierarchical-Z, scissor in
+  CA path (LT has scissor since Sprint 17; CA copy doesn't yet).
+  TMU / PFO / TBF / RSV / MMU / L2 / MC / CSR / PMU CA variants
+  are still future sprints.

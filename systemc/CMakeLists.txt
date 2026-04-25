@@ -39,6 +39,7 @@ add_library(gpu_systemc STATIC
     blocks/primitiveassembly/src/primitiveassembly_lt.cpp
     blocks/primitiveassembly/src/primitiveassembly_ca.cpp
     blocks/rasterizer/src/rasterizer_lt.cpp
+    blocks/rasterizer/src/rasterizer_ca.cpp
     top/src/gpu_top.cpp
 )
 target_include_directories(gpu_systemc PUBLIC
@@ -100,5 +101,12 @@ if(GPU_BUILD_TESTS)
             INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
             BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
         add_test(NAME systemc.pa_ca COMMAND test_primitiveassembly_ca)
+
+        add_executable(test_rasterizer_ca tb/test_rasterizer_ca.cpp)
+        target_link_libraries(test_rasterizer_ca PRIVATE gpu_systemc)
+        set_target_properties(test_rasterizer_ca PROPERTIES
+            INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
+            BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
+        add_test(NAME systemc.rs_ca COMMAND test_rasterizer_ca)
     endif()
 endif()
