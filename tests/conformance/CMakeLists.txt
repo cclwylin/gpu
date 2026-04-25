@@ -8,3 +8,19 @@ foreach(scene_path ${SCENE_FILES})
     add_test(NAME conformance.${scene_name}
              COMMAND scene_runner ${scene_path})
 endforeach()
+
+# Sprint 34 — SystemC pattern runner (Docker-only on macOS+GCC; same
+# libc++/libstdc++ ABI gate as the rest of systemc/).
+if(GPU_BUILD_SYSTEMC)
+    set(_skip_sc_runner FALSE)
+    if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        set(_skip_sc_runner TRUE)
+    endif()
+    if(NOT _skip_sc_runner)
+        add_executable(sc_pattern_runner sc_pattern_runner.cpp)
+        target_link_libraries(sc_pattern_runner PRIVATE gpu_systemc)
+        set_target_properties(sc_pattern_runner PROPERTIES
+            INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
+            BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
+    endif()
+endif()

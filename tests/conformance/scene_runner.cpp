@@ -145,11 +145,21 @@ float rmse(const std::vector<uint32_t>& a, const std::vector<uint32_t>& b) {
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::fprintf(stderr, "usage: %s <scene.scene> [--write-golden]\n", argv[0]);
+        std::fprintf(stderr,
+                     "usage: %s <scene.scene> [--write-golden | --out <ppm>]\n",
+                     argv[0]);
         return 2;
     }
     const std::string scene_path = argv[1];
-    bool write_golden = (argc >= 3 && std::strcmp(argv[2], "--write-golden") == 0);
+    bool write_golden = false;
+    std::string out_ppm;
+    for (int i = 2; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--write-golden") == 0) {
+            write_golden = true;
+        } else if (std::strcmp(argv[i], "--out") == 0 && i + 1 < argc) {
+            out_ppm = argv[++i];
+        }
+    }
 
     Scene scene;
     std::string err;
@@ -208,6 +218,17 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "FAIL: cannot write %s\n", out_path.c_str()); return 1;
         }
         std::printf("wrote %s\n", out_path.c_str());
+        return 0;
+    }
+
+    if (!out_ppm.empty()) {
+        if (!write_ppm(out_ppm, ctx.fb.color, scene.width, scene.height)) {
+            std::fprintf(stderr, "FAIL: cannot write %s\n", out_ppm.c_str());
+            return 1;
+        }
+        std::printf("PPM=%s\n", out_ppm.c_str());
+        std::printf("PAINTED=%d\n", white + edge);
+        std::printf("TRIANGLES=%zu\n", scene.positions.size() / 3);
         return 0;
     }
 
