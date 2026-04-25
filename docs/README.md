@@ -7,11 +7,12 @@
 | 文件 | 內容 | Status |
 |---|---|---|
 | [MASTER_PLAN.md](MASTER_PLAN.md) | 28-month E2E plan,team、timeline、deliverables | frozen v1.0 |
+| [PROGRESS.md](PROGRESS.md) | Plan-vs-actual 進度日誌(每 commit 更新) | live |
 | [arch_spec.md](arch_spec.md) | 頂層 block、dataflow、memory map、interface | draft v0.1 |
-| [isa_spec.md](isa_spec.md) | Shader ISA,encoding、opcode、ABI | draft v0.1 |
+| [isa_spec.md](isa_spec.md) | Shader ISA,encoding、opcode、ABI | frozen v1.0 |
 | [msaa_spec.md](msaa_spec.md) | 4× MSAA 實作細節 | draft v0.1 |
 | [coding_style.md](coding_style.md) | C++ / SystemC / Verilog / Python 風格 | active v1.0 |
-| [microarch/](microarch/) | 每 block microarch 細節(Phase 0 擴充) | WIP |
+| [microarch/](microarch/) | 每 block microarch 細節 | draft v0.1 (15 docs) |
 
 ## 機器可讀 Spec(specs/)
 

@@ -40,6 +40,7 @@ ci/              CI scripts + coding style check
 ## 關鍵文件
 
 - [Master Plan](docs/MASTER_PLAN.md) — 28 個月總規劃,單一真實來源
+- [PROGRESS](docs/PROGRESS.md) — 已交付項、目前狀態、open follow-ups
 - [Architecture Spec](docs/arch_spec.md) — 頂層 block 圖與資料流
 - [ISA Spec](docs/isa_spec.md) — Shader instruction set
 - [MSAA Spec](docs/msaa_spec.md) — 4× MSAA 實作細節
