@@ -68,14 +68,28 @@ void glutReshapeWindow(int w, int h)                        { gs().win_w = w; gs
 void glutPositionWindow(int, int)                           {}
 int  glutGet(GLenum k) {
     switch (k) {
-        case GLUT_WINDOW_WIDTH:  return gs().win_w;
-        case GLUT_WINDOW_HEIGHT: return gs().win_h;
-        default:                 return 0;
+        case GLUT_WINDOW_WIDTH:        return gs().win_w;
+        case GLUT_WINDOW_HEIGHT:       return gs().win_h;
+        // Lie generously about buffer sizes so feature-detect early-
+        // exits don't trip. We don't actually have these buffers, but
+        // when the example uses them we silently no-op (or stencil
+        // through sw_ref's actual stencil support).
+        case GLUT_WINDOW_BUFFER_SIZE:  return 32;
+        case GLUT_WINDOW_DEPTH_SIZE:   return 24;
+        case GLUT_WINDOW_STENCIL_SIZE: return 8;
+        case GLUT_WINDOW_COLORMAP_SIZE: return 256;
+        case GLUT_WINDOW_NUM_SAMPLES:  return 4;
+        case GLUT_SCREEN_WIDTH:        return 1920;
+        case GLUT_SCREEN_HEIGHT:       return 1080;
+        case GLUT_ELAPSED_TIME:        return 0;
+        default:                       return 0;
     }
 }
-int  glutDeviceGet(GLenum)                                  { return 0; }
+// Likewise: claim every device + every overlay capability is present;
+// the example calls back into our stubs which silently no-op.
+int  glutDeviceGet(GLenum)                                  { return 1; }
 int  glutGetModifiers(void)                                 { return 0; }
-int  glutLayerGet(GLenum)                                   { return 0; }
+int  glutLayerGet(GLenum)                                   { return 1; }
 
 void glutBitmapCharacter(void*, int)                        {}
 int  glutStrokeCharacter(void*, int)                        { return 0; }
@@ -89,7 +103,7 @@ void glutPostOverlayRedisplay(void)                         {}
 void glutOverlayDisplayFunc(void (*)(void))                 {}
 void glutHideWindow(void)                                   {}
 void glutShowWindow(void)                                   {}
-int  glutExtensionSupported(const char*)                    { return 0; }
+int  glutExtensionSupported(const char*)                    { return 1; }    // claim everything; we stub silently
 void glutSetColor(int, GLfloat, GLfloat, GLfloat)           {}
 void glutDialsFunc(void (*)(int, int))                      {}
 void glutButtonBoxFunc(void (*)(int, int))                  {}
@@ -98,7 +112,6 @@ void glutSpaceballRotateFunc(void (*)(int, int, int))       {}
 void glutSpaceballButtonFunc(void (*)(int, int))            {}
 void glutTabletButtonFunc(void (*)(int, int, int, int))     {}
 void glutTabletMotionFunc(void (*)(int, int))               {}
-void glutScaleBiasMenu(int, int, int, int)                  {}
 int  glutUseLayer(GLenum)                                   { return 0; }
 
 void glutMainLoop(void) {

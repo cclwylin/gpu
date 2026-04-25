@@ -21,18 +21,30 @@ option(GPU_BUILD_GL_EXAMPLES "Build tests/examples/*.c as glcompat binaries" ON)
 if(GPU_BUILD_GL_EXAMPLES)
     file(GLOB GL_EXAMPLE_C "${CMAKE_SOURCE_DIR}/tests/examples/*.c")
     # Helper-only files (no main()) — included by other examples, not
-    # built standalone.
+    # built standalone. Linked into specific examples that need them.
     set(_glex_skip
         "${CMAKE_SOURCE_DIR}/tests/examples/logo.c"
         "${CMAKE_SOURCE_DIR}/tests/examples/mjkimage.c"
         "${CMAKE_SOURCE_DIR}/tests/examples/trackball.c")
+    # Per-example extra sources: those examples reference symbols from a
+    # sibling .c file in the corpus.
+    set(_glex_extra_dinospin   "${CMAKE_SOURCE_DIR}/tests/examples/trackball.c")
+    set(_glex_extra_glpuzzle   "${CMAKE_SOURCE_DIR}/tests/examples/trackball.c")
+    set(_glex_extra_mjksift    "${CMAKE_SOURCE_DIR}/tests/examples/mjkimage.c")
+    set(_glex_extra_mjkwarp    "${CMAKE_SOURCE_DIR}/tests/examples/mjkimage.c")
+    set(_glex_extra_splatlogo  "${CMAKE_SOURCE_DIR}/tests/examples/logo.c")
     foreach(ex ${GL_EXAMPLE_C})
         if(ex IN_LIST _glex_skip)
             continue()
         endif()
         get_filename_component(name ${ex} NAME_WE)
-        # Compile each .c as a stand-alone binary.
-        add_executable(glex_${name} EXCLUDE_FROM_ALL ${ex})
+        set(_extras "")
+        if(DEFINED _glex_extra_${name})
+            list(APPEND _extras ${_glex_extra_${name}})
+        endif()
+        # Compile each .c as a stand-alone binary, possibly with one or
+        # more helper .c files linked in.
+        add_executable(glex_${name} EXCLUDE_FROM_ALL ${ex} ${_extras})
         target_link_libraries(glex_${name} PRIVATE gpu_glcompat)
         # Hide warnings from the legacy K&R-ish C in the corpus — these
         # are not our code to clean up.

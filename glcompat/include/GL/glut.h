@@ -63,6 +63,27 @@ extern "C" {
 #define GLUT_DEVICE_IGNORE_KEY_REPEAT 611
 #define GLUT_RENDERING_CONTEXT   125
 #define GLUT_INIT_DISPLAY_MODE   124
+#define GLUT_WINDOW_NUM_SAMPLES  121
+#define GLUT_WINDOW_NUM_CHILDREN 122
+#define GLUT_WINDOW_PARENT       123
+#define GLUT_MENU_NOT_IN_USE     0
+#define GLUT_MENU_IN_USE         1
+#define GLUT_CURSOR_LEFT_RIGHT   105
+#define GLUT_CURSOR_UP_DOWN      106
+#define GLUT_CURSOR_TOP_LEFT_CORNER     107
+#define GLUT_CURSOR_TOP_RIGHT_CORNER    108
+#define GLUT_CURSOR_BOTTOM_LEFT_CORNER  109
+#define GLUT_CURSOR_BOTTOM_RIGHT_CORNER 110
+#define GLUT_CURSOR_RIGHT_ARROW         101
+#define GLUT_CURSOR_LEFT_ARROW          103
+#define GLUT_CURSOR_INFO                104
+#define GLUT_CURSOR_DESTROY             111
+#define GLUT_CURSOR_HELP                112
+#define GLUT_CURSOR_CYCLE               113
+#define GLUT_CURSOR_SPRAY               114
+#define GLUT_CURSOR_WAIT                115
+#define GLUT_CURSOR_TEXT                116
+#define GLUT_CURSOR_FULL_CROSSHAIR      117
 #define GLUT_LEFT_BUTTON  0
 #define GLUT_RIGHT_BUTTON 2
 #define GLUT_MIDDLE_BUTTON 1
@@ -187,7 +208,8 @@ void glutSpaceballRotateFunc(void (*f)(int, int, int));
 void glutSpaceballButtonFunc(void (*f)(int, int));
 void glutTabletButtonFunc(void (*f)(int, int, int, int));
 void glutTabletMotionFunc(void (*f)(int, int));
-void glutScaleBiasMenu(int, int, int, int);
+// glutScaleBiasMenu is NOT a real GLUT function — splatlogo.c defines
+// its own local helper with that name; declaring it here would conflict.
 int  glutUseLayer(GLenum);
 
 #ifdef __cplusplus

@@ -119,6 +119,16 @@ void glVertex4f(GLfloat x, GLfloat y, GLfloat z, GLfloat w) {
 void glVertex4fv(const GLfloat* v) {
     glcompat::record_or_apply_vertex({{v[0], v[1], v[2], v[3]}});
 }
+void glVertex4d(GLdouble x, GLdouble y, GLdouble z, GLdouble w) {
+    glcompat::record_or_apply_vertex({{(float)x, (float)y, (float)z, (float)w}});
+}
+void glVertex2d(GLdouble x, GLdouble y) {
+    glcompat::record_or_apply_vertex({{(float)x, (float)y, 0.0f, 1.0f}});
+}
+void glVertex4dv(const GLdouble* v) {
+    glcompat::record_or_apply_vertex(
+        {{(float)v[0], (float)v[1], (float)v[2], (float)v[3]}});
+}
 void glColor4ub(GLubyte r, GLubyte g, GLubyte b, GLubyte a) {
     glcompat::record_or_apply_color(
         {{r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f}});
@@ -276,5 +286,7 @@ void glTexParameteri(GLenum, GLenum pname, GLint param) {
         tex.wrap_repeat_t = (param == GL_REPEAT);
 }
 void glTexParameterf(GLenum t, GLenum p, GLfloat v) { glTexParameteri(t, p, (GLint)v); }
+void glTexParameterfv(GLenum, GLenum, const GLfloat*) {}
+void glTexParameteriv(GLenum, GLenum, const GLint*)   {}
 
 }  // extern "C"

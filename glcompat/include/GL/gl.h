@@ -35,6 +35,10 @@ typedef void          GLvoid;
 #define GL_FALSE 0
 #define GL_TRUE  1
 
+// Version-gating macros that example code keys off via #ifdef.
+#define GL_VERSION_1_1 1
+#define GL_VERSION_1_2 1
+
 // Buffer bits.
 #define GL_COLOR_BUFFER_BIT      0x00004000
 #define GL_DEPTH_BUFFER_BIT      0x00000100
@@ -254,6 +258,14 @@ void glTexImage2D(GLenum target, GLint level, GLint internalformat,
                   GLenum format, GLenum type, const GLvoid* pixels);
 void glTexParameteri(GLenum target, GLenum pname, GLint param);
 void glTexParameterf(GLenum target, GLenum pname, GLfloat param);
+void glTexParameterfv(GLenum target, GLenum pname, const GLfloat* p);
+void glTexParameteriv(GLenum target, GLenum pname, const GLint* p);
+void glVertex4dv(const GLdouble* v);
+void glVertex4d(GLdouble x, GLdouble y, GLdouble z, GLdouble w);
+void glVertex2d(GLdouble x, GLdouble y);
+void glCopyTexImage2D(GLenum target, GLint level, GLenum internalformat,
+                      GLint x, GLint y, GLsizei w, GLsizei h, GLint border);
+#define GL_TEXTURE_COMPONENTS    GL_TEXTURE_INTERNAL_FORMAT
 void glPixelStorei(GLenum pname, GLint param);
 void glTexEnvf(GLenum target, GLenum pname, GLfloat p);
 void glTexEnvi(GLenum target, GLenum pname, GLint p);
@@ -483,6 +495,37 @@ void glScaled(GLdouble x, GLdouble y, GLdouble z);
 #define GL_TEXTURE_WIDTH         0x1000
 #define GL_TEXTURE_HEIGHT        0x1001
 #define GL_TEXTURE_INTERNAL_FORMAT 0x1003
+#define GL_TEXTURE_BORDER        0x1005
+#define GL_TEXTURE_BORDER_COLOR  0x1004
+#define GL_TEXTURE_RED_SIZE      0x805C
+#define GL_TEXTURE_GREEN_SIZE    0x805D
+#define GL_TEXTURE_BLUE_SIZE     0x805E
+#define GL_TEXTURE_ALPHA_SIZE    0x805F
+#define GL_TEXTURE_LUMINANCE_SIZE 0x8060
+#define GL_TEXTURE_INTENSITY_SIZE 0x8061
+#define GL_POINT_SIZE            0x0B11
+#define GL_POINT_SIZE_RANGE      0x0B12
+#define GL_POINT_SIZE_GRANULARITY 0x0B13
+#define GL_CURRENT_RASTER_POSITION 0x0B07
+#define GL_CURRENT_RASTER_POSITION_VALID 0x0B08
+#define GL_CURRENT_RASTER_DISTANCE 0x0B09
+#define GL_CURRENT_RASTER_COLOR  0x0B04
+#define GL_CURRENT_RASTER_INDEX  0x0B05
+#define GL_CURRENT_RASTER_TEXTURE_COORDS 0x0B06
+#define GL_MAP1_TEXTURE_COORD_1  0x0D93
+#define GL_MAP1_TEXTURE_COORD_2  0x0D94
+#define GL_MAP1_TEXTURE_COORD_3  0x0D95
+#define GL_MAP1_TEXTURE_COORD_4  0x0D96
+#define GL_MAP2_TEXTURE_COORD_1  0x0DB3
+#define GL_MAP2_TEXTURE_COORD_2  0x0DB4
+#define GL_MAP2_TEXTURE_COORD_3  0x0DB5
+#define GL_MAP2_TEXTURE_COORD_4  0x0DB6
+#define GL_MAP1_NORMAL           0x0D92
+#define GL_MAP2_NORMAL           0x0DB2
+#define GL_MAP1_INDEX            0x0D91
+#define GL_MAP2_INDEX            0x0DB1
+#define GL_MAP1_VERTEX_3_2       GL_MAP1_VERTEX_3
+#define GL_MAP2_VERTEX_3_2       GL_MAP2_VERTEX_3
 #define GL_RED_BIAS              0x0D15
 #define GL_GREEN_BIAS            0x0D19
 #define GL_BLUE_BIAS             0x0D1B
