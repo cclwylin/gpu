@@ -1,7 +1,7 @@
 ---
 doc: Progress Log
 purpose: Human-readable index of what shipped per commit, mapped to Master Plan milestones.
-last_updated: 2026-04-25 (Sprint 20 — SC cycle-accurate)
+last_updated: 2026-04-25 (Sprint 21 — PA cycle-accurate)
 ---
 
 # PROGRESS.md
@@ -58,6 +58,7 @@ itself — `git show <sha>`.
 | 29 | `87f1cb9` | refactor          | systemc/blocks: append `_lt` suffix to LT files + classes |
 | 30 | `b27ea5f` | Phase 2 / Sprint 19 | systemc: VertexFetch cycle-accurate block (VF_ca) |
 | 31 | `aa4265a` | Phase 2 / Sprint 20 | systemc: ShaderCore cycle-accurate block (SC_ca) |
+| 32 | `b408dcf` | Phase 2 / Sprint 21 | systemc: PrimitiveAssembly cycle-accurate (PA_ca) |
 
 ---
 
@@ -73,11 +74,11 @@ itself — `git show <sha>`.
     stencil_scissor}`
   - `conformance.{triangle_white, triangle_msaa, triangle_rgb}`
   - Skipped (Docker-only): `systemc.tlm_hello`,
-    `systemc.cp_ca`, `systemc.vf_ca`, `systemc.sc_ca`,
+    `systemc.cp_ca`, `systemc.vf_ca`, `systemc.sc_ca`, `systemc.pa_ca`,
     `compiler.glsl_to_spv`
 - **ISA**: v1.1 frozen (MEM class bits + per-lane break formalised)
 - **TLM blocks**: 5 of 15 (CP / VF / SC / PA / RS) at Phase 1 LT;
-  **3** with Phase 2 cycle-accurate variants (CP, VF, SC)
+  **4** with Phase 2 cycle-accurate variants (CP, VF, SC, PA)
 - **Flavour-suffix convention**: file + class suffix indicates SystemC
   abstraction level — `_lt` (LT, b_transport) / `_at` (AT, future) /
   `_pv` (PV, future) / `_ca` (cycle-accurate, sc_signal+CTHREAD).
@@ -605,3 +606,22 @@ migration order in [`docs/phase2_kickoff.md`](phase2_kickoff.md).
   perf accurately.
 - **Out of scope (next sprints)**: PA_ca, then top-level chain
   CP_ca → VF_ca → SC_ca (now possible with the 3 CA blocks).
+
+## Sprint 21 — PrimitiveAssembly cycle-accurate(`b408dcf`)
+- **Done**:
+  - `primitiveassembly_ca.{h,cpp}` — same Phase-2 wire shape as
+    CP/VF/SC. Per accepted PrimAssemblyJob: run perspective-divide +
+    viewport + back-face-cull (math copied from `primitiveassembly_lt`
+    until LT/CA share a math module), populate `job->triangles` in
+    place, forward downstream.
+  - Timing placeholder: 2 cycles per emitted triangle (split into
+    post-divide + cull/emit phases). Real per-tri pipe latency
+    (clipping, attribute setup) Phase 2.x.
+  - Testbench `test_primitiveassembly_ca.cpp` (Docker-only): push
+    one PrimAssemblyJob with 3 vs_outputs covering the same triangle
+    as the LT testbench (NDC top-vertex 0.7 on a 32×32 vp);
+    asserts 1 triangle out, top-vertex screen y ≈ 27.2.
+- **Tests**: 17/17 non-SystemC still green; gpu_systemc lib compiles.
+- **Out of scope**: clipping (near/far plane), strip / fan primitive
+  modes (LT block already does these; CA copy currently TRIANGLES-
+  only).
