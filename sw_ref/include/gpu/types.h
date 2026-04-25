@@ -76,8 +76,9 @@ struct Framebuffer {
     bool a2c     = false;
     // Backing storage (post-resolve, RGBA8 packed).
     std::vector<uint32_t> color;
-    // Per-sample storage during render: width * height * sample_count.
-    // For MSAA path; allocated only when msaa_4x = true.
+    // 1× depth buffer (used when msaa_4x = false). Float depth in [0,1].
+    std::vector<float>    depth;
+    // Per-sample storage during render (msaa_4x = true).
     std::vector<uint32_t> color_samples;
     std::vector<float>    depth_samples;
     std::vector<uint8_t>  stencil_samples;

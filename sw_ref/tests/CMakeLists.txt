@@ -17,3 +17,7 @@ add_test(NAME sw_ref.msaa COMMAND test_msaa)
 add_executable(test_texture test_texture.cpp)
 target_link_libraries(test_texture PRIVATE gpu_sw_ref)
 add_test(NAME sw_ref.texture COMMAND test_texture)
+
+add_executable(test_pfo test_pfo.cpp)
+target_link_libraries(test_pfo PRIVATE gpu_sw_ref)
+add_test(NAME sw_ref.pfo COMMAND test_pfo)

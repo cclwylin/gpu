@@ -24,11 +24,29 @@ struct DrawState {
         TRIANGLES,
         TRIANGLE_STRIP,
         TRIANGLE_FAN,
-        // POINTS / LINES: out of skeleton scope
     } primitive = TRIANGLES;
 
+    // Depth state
     bool depth_test  = false;
     bool depth_write = true;
+    enum DepthFunc : uint8_t {
+        DF_LESS, DF_LEQUAL, DF_EQUAL, DF_GEQUAL,
+        DF_GREATER, DF_NOTEQUAL, DF_ALWAYS, DF_NEVER,
+    } depth_func = DF_LESS;
+
+    // Blend state (ES 2.0 subset; no logic op, no separate alpha blend).
+    bool blend_enable = false;
+    enum BlendFactor : uint8_t {
+        BF_ZERO, BF_ONE,
+        BF_SRC_COLOR,  BF_ONE_MINUS_SRC_COLOR,
+        BF_DST_COLOR,  BF_ONE_MINUS_DST_COLOR,
+        BF_SRC_ALPHA,  BF_ONE_MINUS_SRC_ALPHA,
+        BF_DST_ALPHA,  BF_ONE_MINUS_DST_ALPHA,
+    } blend_src = BF_SRC_ALPHA, blend_dst = BF_ONE_MINUS_SRC_ALPHA;
+    enum BlendEq : uint8_t {
+        BE_ADD, BE_SUBTRACT, BE_REVERSE_SUBTRACT,
+    } blend_eq = BE_ADD;
+
     bool cull_back   = false;
     bool a2c         = false;
 
