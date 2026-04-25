@@ -49,10 +49,23 @@ void rasterizer(Context& ctx,
 
         auto fmin3 = [](float a, float b, float c) { return std::min(a, std::min(b, c)); };
         auto fmax3 = [](float a, float b, float c) { return std::max(a, std::max(b, c)); };
-        const int xmin = std::max(0,     static_cast<int>(std::floor(fmin3(vx0, vx1, vx2))));
-        const int xmax = std::min(W - 1, static_cast<int>(std::ceil (fmax3(vx0, vx1, vx2))));
-        const int ymin = std::max(0,     static_cast<int>(std::floor(fmin3(vy0, vy1, vy2))));
-        const int ymax = std::min(H - 1, static_cast<int>(std::ceil (fmax3(vy0, vy1, vy2))));
+        int xmin_b = std::max(0,     static_cast<int>(std::floor(fmin3(vx0, vx1, vx2))));
+        int xmax_b = std::min(W - 1, static_cast<int>(std::ceil (fmax3(vx0, vx1, vx2))));
+        int ymin_b = std::max(0,     static_cast<int>(std::floor(fmin3(vy0, vy1, vy2))));
+        int ymax_b = std::min(H - 1, static_cast<int>(std::ceil (fmax3(vy0, vy1, vy2))));
+        // Scissor (Sprint 17): clip the bbox so we never visit fragments
+        // outside the box.
+        if (ctx.draw.scissor_enable) {
+            const int sx0 = ctx.draw.scissor_x;
+            const int sy0 = ctx.draw.scissor_y;
+            const int sx1 = ctx.draw.scissor_x + ctx.draw.scissor_w - 1;
+            const int sy1 = ctx.draw.scissor_y + ctx.draw.scissor_h - 1;
+            xmin_b = std::max(xmin_b, sx0);
+            ymin_b = std::max(ymin_b, sy0);
+            xmax_b = std::min(xmax_b, sx1);
+            ymax_b = std::min(ymax_b, sy1);
+        }
+        const int xmin = xmin_b, xmax = xmax_b, ymin = ymin_b, ymax = ymax_b;
 
         for (int py = ymin; py <= ymax; ++py) {
             for (int px = xmin; px <= xmax; ++px) {

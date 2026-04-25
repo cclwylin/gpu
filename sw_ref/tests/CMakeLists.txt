@@ -21,3 +21,7 @@ add_test(NAME sw_ref.texture COMMAND test_texture)
 add_executable(test_pfo test_pfo.cpp)
 target_link_libraries(test_pfo PRIVATE gpu_sw_ref)
 add_test(NAME sw_ref.pfo COMMAND test_pfo)
+
+add_executable(test_stencil_scissor test_stencil_scissor.cpp)
+target_link_libraries(test_stencil_scissor PRIVATE gpu_sw_ref)
+add_test(NAME sw_ref.stencil_scissor COMMAND test_stencil_scissor)

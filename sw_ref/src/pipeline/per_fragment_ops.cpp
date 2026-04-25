@@ -40,6 +40,34 @@ bool depth_pass(DrawState::DepthFunc func, float src, float dst) {
     return true;
 }
 
+bool stencil_pass(DrawState::StencilFunc func, uint8_t ref_masked, uint8_t cur_masked) {
+    using SF = DrawState;
+    switch (func) {
+        case SF::SF_NEVER:    return false;
+        case SF::SF_LESS:     return ref_masked <  cur_masked;
+        case SF::SF_LEQUAL:   return ref_masked <= cur_masked;
+        case SF::SF_GREATER:  return ref_masked >  cur_masked;
+        case SF::SF_GEQUAL:   return ref_masked >= cur_masked;
+        case SF::SF_EQUAL:    return ref_masked == cur_masked;
+        case SF::SF_NOTEQUAL: return ref_masked != cur_masked;
+        case SF::SF_ALWAYS:   return true;
+    }
+    return true;
+}
+
+uint8_t apply_stencil_op(DrawState::StencilOp op, uint8_t cur, uint8_t ref) {
+    using SO = DrawState;
+    switch (op) {
+        case SO::SO_KEEP:    return cur;
+        case SO::SO_ZERO:    return 0;
+        case SO::SO_REPLACE: return ref;
+        case SO::SO_INCR:    return cur < 0xFF ? static_cast<uint8_t>(cur + 1) : 0xFF;
+        case SO::SO_DECR:    return cur > 0    ? static_cast<uint8_t>(cur - 1) : 0;
+        case SO::SO_INVERT:  return static_cast<uint8_t>(~cur);
+    }
+    return cur;
+}
+
 float blend_factor(DrawState::BlendFactor f, const Vec4f& src, const Vec4f& dst, int ch) {
     using BF = DrawState;
     switch (f) {
@@ -73,34 +101,63 @@ Vec4f apply_blend(const DrawState& s, const Vec4f& src, const Vec4f& dst) {
     return out;
 }
 
+// Alpha-to-coverage (Sprint 17). Maps FS alpha [0,1] to a 4-bit MSAA mask
+// using a fixed monotonic table (per docs/msaa_spec.md §5.2).
+uint8_t a2c_mask(float alpha) {
+    if (alpha <  0.125f) return 0b0000;
+    if (alpha <  0.375f) return 0b0001;
+    if (alpha <  0.625f) return 0b0101;
+    if (alpha <  0.875f) return 0b0111;
+    return 0b1111;
+}
+
 }  // namespace
 
-// PFO with depth test + alpha blend.
-// MSAA path uses depth_samples / color_samples (per sample); 1× uses depth + color.
-// Stencil deferred to a follow-up sprint.
+// PFO with stencil + depth + a2c + blend, both 1× and 4× MSAA paths.
 void per_fragment_ops(Context& ctx, const Quad& quad) {
-    auto& fb  = ctx.fb;
-    auto& ds  = ctx.draw;
+    auto& fb = ctx.fb;
+    auto& ds = ctx.draw;
+    const uint8_t s_ref_masked = ds.stencil_ref & ds.stencil_read_mask;
 
     for (const auto& f : quad.frags) {
         if (f.coverage_mask == 0) continue;
         if (f.pos.x < 0 || f.pos.x >= fb.width)  continue;
         if (f.pos.y < 0 || f.pos.y >= fb.height) continue;
 
+        uint8_t mask  = f.coverage_mask;
+        Vec4f   color = f.varying[0];
+
+        if (fb.msaa_4x && ds.a2c) mask &= a2c_mask(color[3]);
+
         const size_t pix = static_cast<size_t>(f.pos.y) * fb.width + f.pos.x;
 
         if (fb.msaa_4x) {
             const size_t base = pix * 4;
-            uint8_t mask = f.coverage_mask;
             for (int s = 0; s < 4; ++s) {
                 if (!(mask & (1 << s))) continue;
-                if (ds.depth_test && !fb.depth_samples.empty()) {
-                    if (!depth_pass(ds.depth_func, f.depth, fb.depth_samples[base + s])) {
-                        continue;
-                    }
-                    if (ds.depth_write) fb.depth_samples[base + s] = f.depth;
+                bool s_pass = true;
+                uint8_t s_cur = 0;
+                if (ds.stencil_test && !fb.stencil_samples.empty()) {
+                    s_cur = fb.stencil_samples[base + s];
+                    s_pass = stencil_pass(ds.stencil_func, s_ref_masked,
+                                          static_cast<uint8_t>(s_cur & ds.stencil_read_mask));
                 }
-                Vec4f src = f.varying[0];
+                bool z_pass = true;
+                if (ds.depth_test && !fb.depth_samples.empty()) {
+                    z_pass = depth_pass(ds.depth_func, f.depth, fb.depth_samples[base + s]);
+                }
+                if (ds.stencil_test) {
+                    DrawState::StencilOp op = !s_pass ? ds.sop_fail
+                                            : !z_pass ? ds.sop_zfail
+                                                      : ds.sop_zpass;
+                    uint8_t s_new = apply_stencil_op(op, s_cur, ds.stencil_ref);
+                    s_new = (s_cur & ~ds.stencil_write_mask) | (s_new & ds.stencil_write_mask);
+                    if (!fb.stencil_samples.empty()) fb.stencil_samples[base + s] = s_new;
+                }
+                if (!s_pass || !z_pass) continue;
+                if (ds.depth_write && !fb.depth_samples.empty())
+                    fb.depth_samples[base + s] = f.depth;
+                Vec4f src = color;
                 if (ds.blend_enable) {
                     Vec4f dst = unpack_rgba8(fb.color_samples[base + s]);
                     src = apply_blend(ds, src, dst);
@@ -108,11 +165,29 @@ void per_fragment_ops(Context& ctx, const Quad& quad) {
                 fb.color_samples[base + s] = pack_rgba8(src);
             }
         } else {
-            if (ds.depth_test && !fb.depth.empty()) {
-                if (!depth_pass(ds.depth_func, f.depth, fb.depth[pix])) continue;
-                if (ds.depth_write) fb.depth[pix] = f.depth;
+            bool s_pass = true;
+            uint8_t s_cur = 0;
+            if (ds.stencil_test && !fb.stencil.empty()) {
+                s_cur = fb.stencil[pix];
+                s_pass = stencil_pass(ds.stencil_func, s_ref_masked,
+                                      static_cast<uint8_t>(s_cur & ds.stencil_read_mask));
             }
-            Vec4f src = f.varying[0];
+            bool z_pass = true;
+            if (ds.depth_test && !fb.depth.empty()) {
+                z_pass = depth_pass(ds.depth_func, f.depth, fb.depth[pix]);
+            }
+            if (ds.stencil_test) {
+                DrawState::StencilOp op = !s_pass ? ds.sop_fail
+                                        : !z_pass ? ds.sop_zfail
+                                                  : ds.sop_zpass;
+                uint8_t s_new = apply_stencil_op(op, s_cur, ds.stencil_ref);
+                s_new = (s_cur & ~ds.stencil_write_mask) | (s_new & ds.stencil_write_mask);
+                if (!fb.stencil.empty()) fb.stencil[pix] = s_new;
+            }
+            if (!s_pass || !z_pass) continue;
+            if (ds.depth_write && !fb.depth.empty()) fb.depth[pix] = f.depth;
+
+            Vec4f src = color;
             if (ds.blend_enable) {
                 Vec4f dst = unpack_rgba8(fb.color[pix]);
                 src = apply_blend(ds, src, dst);

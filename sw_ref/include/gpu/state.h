@@ -47,6 +47,24 @@ struct DrawState {
         BE_ADD, BE_SUBTRACT, BE_REVERSE_SUBTRACT,
     } blend_eq = BE_ADD;
 
+    // Stencil state (Sprint 17)
+    bool    stencil_test  = false;
+    enum StencilFunc : uint8_t {
+        SF_NEVER, SF_LESS, SF_LEQUAL, SF_GREATER, SF_GEQUAL,
+        SF_EQUAL, SF_NOTEQUAL, SF_ALWAYS,
+    } stencil_func = SF_ALWAYS;
+    enum StencilOp : uint8_t {
+        SO_KEEP, SO_ZERO, SO_REPLACE, SO_INCR, SO_DECR, SO_INVERT,
+    } sop_fail = SO_KEEP, sop_zfail = SO_KEEP, sop_zpass = SO_KEEP;
+    uint8_t stencil_ref      = 0;
+    uint8_t stencil_read_mask  = 0xFF;
+    uint8_t stencil_write_mask = 0xFF;
+
+    // Scissor (Sprint 17). When enabled, fragments outside the box are
+    // discarded by the rasterizer (treated as zero coverage).
+    bool    scissor_enable = false;
+    int32_t scissor_x = 0, scissor_y = 0, scissor_w = 0, scissor_h = 0;
+
     bool cull_back   = false;
     bool a2c         = false;
 

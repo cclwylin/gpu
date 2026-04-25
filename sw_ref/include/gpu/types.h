@@ -78,6 +78,8 @@ struct Framebuffer {
     std::vector<uint32_t> color;
     // 1× depth buffer (used when msaa_4x = false). Float depth in [0,1].
     std::vector<float>    depth;
+    // 1× stencil buffer (Sprint 17). 8-bit unsigned per pixel.
+    std::vector<uint8_t>  stencil;
     // Per-sample storage during render (msaa_4x = true).
     std::vector<uint32_t> color_samples;
     std::vector<float>    depth_samples;
