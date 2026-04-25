@@ -85,7 +85,8 @@ formats:
       - {field: src2_idx,      bits: "11:7",  desc: "GPR-only, used by 3-operand ops"}
       - {field: src2_neg,      bits: "6"}
       - {field: src2_abs,      bits: "5"}
-      - {field: reserved,      bits: "4:0"}
+      - {field: dst_class,     bits: "4",   desc: "0=GPR (dst[4:0] = r0..r31), 1=output (dst[1:0] = o0..o3)"}
+      - {field: reserved,      bits: "3:0"}
 
   # Flow control: 64-bit
   flow:

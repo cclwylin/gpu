@@ -83,7 +83,8 @@ vec4 ALU with full 8-bit swizzle、source modifier、per-lane predication。
 | `a0` / `a1` | Source absolute |
 | `s2id` | 3-operand src2(GPR-only) |
 | `n2` / `a2` | Src2 modifier |
-| `res` | Reserved(must be 0) |
+| (bit 4) | `dst_class`:0=GPR(`dst[4:0]` = r0..r31)、1=output(`dst[1:0]` = o0..o3) |
+| `res` | Reserved 4-bit(must be 0) |
 
 ### 3.2 Flow Control Format
 ```

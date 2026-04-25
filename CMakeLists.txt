@@ -27,8 +27,10 @@ option(GPU_BUILD_TESTS "Build unit tests" ON)
 
 enable_testing()
 
+add_subdirectory(compiler)
 add_subdirectory(sw_ref)
 
 if(GPU_BUILD_TESTS)
+    add_subdirectory(compiler/tests)
     add_subdirectory(sw_ref/tests)
 endif()

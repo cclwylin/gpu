@@ -1,0 +1,7 @@
+add_executable(test_asm_roundtrip test_asm_roundtrip.cpp)
+target_link_libraries(test_asm_roundtrip PRIVATE gpu_compiler)
+add_test(NAME compiler.asm_roundtrip COMMAND test_asm_roundtrip)
+
+add_executable(test_sim_basic test_sim_basic.cpp)
+target_link_libraries(test_sim_basic PRIVATE gpu_compiler)
+add_test(NAME compiler.sim_basic COMMAND test_sim_basic)

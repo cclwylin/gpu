@@ -42,12 +42,21 @@ struct DrawState {
 };
 
 struct BoundShaderPair {
-    // For the skeleton, both shaders are C++ functors set up by the caller.
-    // A real driver will instead hold compiled shader binaries.
+    // Sprint-1 model: each side is *either* a C++ functor (legacy) *or* a
+    // compiled ISA binary that we run through compiler/isa_sim/. Sprint 1
+    // exercises both paths so we can A/B verify.
     using VsFn = void (*)(const DrawState&, const Vec4f* attrs, Vertex& out_vert);
     using FsFn = void (*)(const DrawState&, const Vec4f* varying, Vec4f& out_color);
     VsFn vs = nullptr;
     FsFn fs = nullptr;
+
+    // Optional ISA binaries. If set, take precedence over the functor.
+    // Held as opaque pointers so sw_ref/state.h doesn't depend on compiler/.
+    const void* vs_binary = nullptr;     // -> std::vector<uint64_t>
+    const void* fs_binary = nullptr;
+    int  vs_attr_count = 0;              // attribute slots used as r0..r{N-1}
+    int  vs_varying_count = 0;
+    int  fs_varying_count = 0;
 };
 
 struct Context {

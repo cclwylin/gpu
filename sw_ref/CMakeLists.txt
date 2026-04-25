@@ -15,6 +15,7 @@ add_library(gpu_sw_ref STATIC
 )
 
 target_include_directories(gpu_sw_ref PUBLIC include)
+target_link_libraries(gpu_sw_ref PUBLIC gpu_compiler)
 
 # Drivers / tools that link to the model
 add_executable(sw_ref_smoke src/main_smoke.cpp)
