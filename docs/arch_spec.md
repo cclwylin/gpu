@@ -78,7 +78,7 @@ ISA 另見 [`isa_spec.md`](isa_spec.md),MSAA 細節見 [`msaa_spec.md`](msaa_spe
 - **Role**:parse ring buffer,maintain HW state,dispatch to VF / RS。
 - **Interface**:AXI master(讀 ring)、APB slave(CSR)、內部 fanout 到各 state block。
 - **Internal**:FSM + command decoder + state scoreboard。
-- **詳見**:`docs/microarch/cp.md`(Phase 0 產出)
+- **詳見**:`docs/microarch/commandprocessor.md`(Phase 0 產出)
 
 ### 4.2 VF — Vertex Fetch
 - **Role**:index fetch、attribute fetch、format conversion、post-transform vertex cache。
@@ -96,7 +96,7 @@ ISA 另見 [`isa_spec.md`](isa_spec.md),MSAA 細節見 [`msaa_spec.md`](msaa_spe
   - L1 I$(每 warp slot 共享)
   - Special function unit(rcp/rsq/exp/log/sin/cos)
   - TMU interface、varying load/store unit
-- **詳見**:`docs/microarch/sc.md`
+- **詳見**:`docs/microarch/shadercore.md`
 
 ### 4.4 PA — Primitive Assembly
 - **Role**:perspective divide、viewport、clip、cull、assemble triangle。

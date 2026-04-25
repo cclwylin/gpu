@@ -1,7 +1,7 @@
 ---
 doc: Progress Log
 purpose: Human-readable index of what shipped per commit, mapped to Master Plan milestones.
-last_updated: 2026-04-25 (post-Sprint 12 refactor)
+last_updated: 2026-04-25 (post-Sprint 12 refactor + microarch rename)
 ---
 
 # PROGRESS.md
@@ -46,6 +46,7 @@ itself — `git show <sha>`.
 | 17 | `7f52a4c` | Phase 1 / Sprint 11 | conformance harness — scene-based CTest regression |
 | 18 | `968736f` | Phase 1 / Sprint 12 | glslang integration (gated; SPIR-V emit) |
 | 19 | `3ead419` | Phase 1 / refactor | systemc/blocks: rename abbrev → full names (cp→commandprocessor, …) |
+| 20 | `e00d78c` | Phase 1 / refactor | docs/microarch: same rename applied to spec stub filenames |
 
 ---
 
@@ -363,3 +364,12 @@ finishing one track first.
   full form; only paths changed.
 - **Out of scope**: `docs/microarch/<abbr>.md` filenames left as-is
   (those are spec stubs, not code; rename is cheap if asked later).
+  — **closed in next refactor commit** (see below).
+
+## Refactor — docs/microarch/ name expansion(`e00d78c`)
+- **Done**: All 15 `docs/microarch/<abbr>.md` files renamed in lockstep
+  with the systemc/blocks/ directories. Cross-references in
+  `docs/arch_spec.md`, `docs/microarch/README.md` (index table relinked
+  with full filenames), and `systemc/blocks/commandprocessor/README.md`
+  updated. No abbreviated `.md` references remain in the repo.
+- **Tests**: Documentation-only change; CTest 14/14 unaffected.

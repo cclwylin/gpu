@@ -8,7 +8,7 @@
 
 ## Internal
 - FSM:IDLE / FETCH / DECODE / DISPATCH / WAIT
-- Command decoder(見 [docs/microarch/cp.md](../../../docs/microarch/cp.md),Phase 0 產出)
+- Command decoder(見 [docs/microarch/commandprocessor.md](../../../docs/microarch/commandprocessor.md),Phase 0 產出)
 - State scoreboard(追蹤 in-flight draw 依賴)
 
 ## Timing
