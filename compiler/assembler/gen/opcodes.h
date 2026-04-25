@@ -12,8 +12,8 @@ enum class Opcode : uint32_t {
     OP_MOV = 0x01,  // alu: dst = src0
     OP_ADD = 0x02,  // alu: dst = src0 + src1
     OP_MUL = 0x03,  // alu: dst = src0 * src1
-    OP_MAD = 0x04,  // alu: dst = src0*src1 + src2
-    OP_DP3 = 0x05,  // alu: dst.xyzw = dot3(src0, src1)
+    OP_DP2 = 0x04,  // alu: dst.xyzw = dot2(src0.xy, src1.xy)
+    OP_DP3 = 0x05,  // alu: dst.xyzw = dot3(src0.xyz, src1.xyz)
     OP_DP4 = 0x06,  // alu: dst.xyzw = dot4(src0, src1)
     OP_RCP = 0x07,  // alu: dst.xyzw = 1/src0.x
     OP_RSQ = 0x08,  // alu: dst.xyzw = 1/sqrt(src0.x)
@@ -26,20 +26,30 @@ enum class Opcode : uint32_t {
     OP_ABS = 0x0F,  // alu: dst = abs(src0)
     OP_FRC = 0x10,  // alu: dst = src0 - floor(src0)
     OP_FLR = 0x11,  // alu: dst = floor(src0)
-    OP_CMP = 0x12,  // alu: dst = src0>=0 ? src1 : src2
-    OP_BRA = 0x20,  // flow: 
+    OP_MAD = 0x12,  // alu: dst = src0*src1 + src2
+    OP_CMP = 0x13,  // alu: dst = src0 >= 0 ? src1 : src2
+    OP_SETP_EQ = 0x18,  // alu: p[lane] = (src0 == src1)  (scalar src0.x src1.x)
+    OP_SETP_NE = 0x19,  // alu: p[lane] = (src0 != src1)
+    OP_SETP_LT = 0x1A,  // alu: p[lane] = (src0 <  src1)
+    OP_SETP_LE = 0x1B,  // alu: p[lane] = (src0 <= src1)
+    OP_SETP_GT = 0x1C,  // alu: p[lane] = (src0 >  src1)
+    OP_SETP_GE = 0x1D,  // alu: p[lane] = (src0 >= src1)
+    OP_BRA = 0x20,  // flow: branch (predicated via pmd)
     OP_CALL = 0x21,  // flow: 
     OP_RET = 0x22,  // flow: 
-    OP_LOOP = 0x23,  // flow: 
+    OP_LOOP = 0x23,  // flow: push iteration count + start PC
     OP_ENDLOOP = 0x24,  // flow: 
-    OP_BREAK = 0x25,  // flow: 
-    OP_KIL = 0x26,  // flow: discard pixel (FS only)
-    OP_LD = 0x30,  // mem: dst = mem[src+imm]
-    OP_ST = 0x31,  // mem: mem[src+imm] = dst
-    OP_TEX = 0x34,  // mem: 
-    OP_TEXB = 0x35,  // mem: 
-    OP_TEXL = 0x36,  // mem: 
-    OP_TEXG = 0x37,  // mem: 
+    OP_BREAK = 0x25,  // flow: exit innermost loop (predicated via pmd)
+    OP_IF_P = 0x26,  // flow: push mask, mask &= p
+    OP_ELSE = 0x27,  // flow: invert masked subset
+    OP_ENDIF = 0x28,  // flow: pop mask
+    OP_KIL = 0x29,  // flow: clear mask bit (FS only)
+    OP_LD = 0x30,  // mem: dst = mem[src + imm]
+    OP_ST = 0x31,  // mem: mem[src + imm] = src (dst field acts as data reg)
+    OP_TEX = 0x34,  // mem: dst = tex2D(binding[tex], src.xy)
+    OP_TEXB = 0x35,  // mem: with bias from src.w
+    OP_TEXL = 0x36,  // mem: with explicit LOD from src.w
+    OP_TEXG = 0x37,  // mem: with explicit gradient (uses src2 for dy)
 };
 
 inline const char* opcode_name(Opcode op) {
@@ -48,7 +58,7 @@ inline const char* opcode_name(Opcode op) {
         case Opcode::OP_MOV: return "mov";
         case Opcode::OP_ADD: return "add";
         case Opcode::OP_MUL: return "mul";
-        case Opcode::OP_MAD: return "mad";
+        case Opcode::OP_DP2: return "dp2";
         case Opcode::OP_DP3: return "dp3";
         case Opcode::OP_DP4: return "dp4";
         case Opcode::OP_RCP: return "rcp";
@@ -62,13 +72,23 @@ inline const char* opcode_name(Opcode op) {
         case Opcode::OP_ABS: return "abs";
         case Opcode::OP_FRC: return "frc";
         case Opcode::OP_FLR: return "flr";
+        case Opcode::OP_MAD: return "mad";
         case Opcode::OP_CMP: return "cmp";
+        case Opcode::OP_SETP_EQ: return "setp_eq";
+        case Opcode::OP_SETP_NE: return "setp_ne";
+        case Opcode::OP_SETP_LT: return "setp_lt";
+        case Opcode::OP_SETP_LE: return "setp_le";
+        case Opcode::OP_SETP_GT: return "setp_gt";
+        case Opcode::OP_SETP_GE: return "setp_ge";
         case Opcode::OP_BRA: return "bra";
         case Opcode::OP_CALL: return "call";
         case Opcode::OP_RET: return "ret";
         case Opcode::OP_LOOP: return "loop";
         case Opcode::OP_ENDLOOP: return "endloop";
         case Opcode::OP_BREAK: return "break";
+        case Opcode::OP_IF_P: return "if_p";
+        case Opcode::OP_ELSE: return "else";
+        case Opcode::OP_ENDIF: return "endif";
         case Opcode::OP_KIL: return "kil";
         case Opcode::OP_LD: return "ld";
         case Opcode::OP_ST: return "st";
@@ -87,7 +107,7 @@ inline Format opcode_format(Opcode op) {
         case Opcode::OP_MOV: return Format::ALU;
         case Opcode::OP_ADD: return Format::ALU;
         case Opcode::OP_MUL: return Format::ALU;
-        case Opcode::OP_MAD: return Format::ALU;
+        case Opcode::OP_DP2: return Format::ALU;
         case Opcode::OP_DP3: return Format::ALU;
         case Opcode::OP_DP4: return Format::ALU;
         case Opcode::OP_RCP: return Format::ALU;
@@ -101,13 +121,23 @@ inline Format opcode_format(Opcode op) {
         case Opcode::OP_ABS: return Format::ALU;
         case Opcode::OP_FRC: return Format::ALU;
         case Opcode::OP_FLR: return Format::ALU;
+        case Opcode::OP_MAD: return Format::ALU;
         case Opcode::OP_CMP: return Format::ALU;
+        case Opcode::OP_SETP_EQ: return Format::ALU;
+        case Opcode::OP_SETP_NE: return Format::ALU;
+        case Opcode::OP_SETP_LT: return Format::ALU;
+        case Opcode::OP_SETP_LE: return Format::ALU;
+        case Opcode::OP_SETP_GT: return Format::ALU;
+        case Opcode::OP_SETP_GE: return Format::ALU;
         case Opcode::OP_BRA: return Format::FLOW;
         case Opcode::OP_CALL: return Format::FLOW;
         case Opcode::OP_RET: return Format::FLOW;
         case Opcode::OP_LOOP: return Format::FLOW;
         case Opcode::OP_ENDLOOP: return Format::FLOW;
         case Opcode::OP_BREAK: return Format::FLOW;
+        case Opcode::OP_IF_P: return Format::FLOW;
+        case Opcode::OP_ELSE: return Format::FLOW;
+        case Opcode::OP_ENDIF: return Format::FLOW;
         case Opcode::OP_KIL: return Format::FLOW;
         case Opcode::OP_LD: return Format::MEM;
         case Opcode::OP_ST: return Format::MEM;
@@ -125,7 +155,7 @@ inline int opcode_operands(Opcode op) {
         case Opcode::OP_MOV: return 2;
         case Opcode::OP_ADD: return 2;
         case Opcode::OP_MUL: return 2;
-        case Opcode::OP_MAD: return 3;
+        case Opcode::OP_DP2: return 2;
         case Opcode::OP_DP3: return 2;
         case Opcode::OP_DP4: return 2;
         case Opcode::OP_RCP: return 2;
@@ -139,13 +169,23 @@ inline int opcode_operands(Opcode op) {
         case Opcode::OP_ABS: return 2;
         case Opcode::OP_FRC: return 2;
         case Opcode::OP_FLR: return 2;
+        case Opcode::OP_MAD: return 3;
         case Opcode::OP_CMP: return 3;
+        case Opcode::OP_SETP_EQ: return 2;
+        case Opcode::OP_SETP_NE: return 2;
+        case Opcode::OP_SETP_LT: return 2;
+        case Opcode::OP_SETP_LE: return 2;
+        case Opcode::OP_SETP_GT: return 2;
+        case Opcode::OP_SETP_GE: return 2;
         case Opcode::OP_BRA: return 2;
         case Opcode::OP_CALL: return 2;
         case Opcode::OP_RET: return 2;
         case Opcode::OP_LOOP: return 2;
         case Opcode::OP_ENDLOOP: return 2;
         case Opcode::OP_BREAK: return 2;
+        case Opcode::OP_IF_P: return 2;
+        case Opcode::OP_ELSE: return 2;
+        case Opcode::OP_ENDIF: return 2;
         case Opcode::OP_KIL: return 2;
         case Opcode::OP_LD: return 2;
         case Opcode::OP_ST: return 2;

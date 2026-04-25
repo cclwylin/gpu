@@ -16,8 +16,8 @@ case Opcode::OP_ADD:
 case Opcode::OP_MUL:
     exec_mul(ctx, inst);
     break;
-case Opcode::OP_MAD:
-    exec_mad(ctx, inst);
+case Opcode::OP_DP2:
+    exec_dp2(ctx, inst);
     break;
 case Opcode::OP_DP3:
     exec_dp3(ctx, inst);
@@ -58,8 +58,29 @@ case Opcode::OP_FRC:
 case Opcode::OP_FLR:
     exec_flr(ctx, inst);
     break;
+case Opcode::OP_MAD:
+    exec_mad(ctx, inst);
+    break;
 case Opcode::OP_CMP:
     exec_cmp(ctx, inst);
+    break;
+case Opcode::OP_SETP_EQ:
+    exec_setp_eq(ctx, inst);
+    break;
+case Opcode::OP_SETP_NE:
+    exec_setp_ne(ctx, inst);
+    break;
+case Opcode::OP_SETP_LT:
+    exec_setp_lt(ctx, inst);
+    break;
+case Opcode::OP_SETP_LE:
+    exec_setp_le(ctx, inst);
+    break;
+case Opcode::OP_SETP_GT:
+    exec_setp_gt(ctx, inst);
+    break;
+case Opcode::OP_SETP_GE:
+    exec_setp_ge(ctx, inst);
     break;
 case Opcode::OP_BRA:
     exec_bra(ctx, inst);
@@ -78,6 +99,15 @@ case Opcode::OP_ENDLOOP:
     break;
 case Opcode::OP_BREAK:
     exec_break(ctx, inst);
+    break;
+case Opcode::OP_IF_P:
+    exec_if_p(ctx, inst);
+    break;
+case Opcode::OP_ELSE:
+    exec_else(ctx, inst);
+    break;
+case Opcode::OP_ENDIF:
+    exec_endif(ctx, inst);
     break;
 case Opcode::OP_KIL:
     exec_kil(ctx, inst);

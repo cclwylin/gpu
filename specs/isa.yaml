@@ -1,36 +1,53 @@
 # ------------------------------------------------------------------------------
-# Shader ISA — machine-readable definition
+# Shader ISA — machine-readable definition (v1.0 frozen)
 # ------------------------------------------------------------------------------
 # Consumed by tools/isa_gen/ to generate:
 #   - Assembler   (compiler/assembler/gen/)
 #   - Disassembler
-#   - ISA simulator skeleton
+#   - ISA simulator dispatch table
 #   - Decoder RTL (rtl/blocks/sc/gen/)
+#
+# v1.0 changes vs v0.1:
+#   - Instruction width 32 -> 64 bit (uniform, no variable length)
+#   - Swizzle 2-bit -> 8-bit (arbitrary per-component pick)
+#   - Source modifier (negate, abs) explicit in encoding
+#   - 3-operand ALU (mad/cmp) inline (no instruction pairing)
+#   - Predicate model: 16-bit per warp, set via `setp_*`, used via pmd field
+#   - New opcodes: dp2, setp_eq/ne/lt/le/gt/ge
 # ------------------------------------------------------------------------------
 
-version: 0.1
-status: draft
+version: "1.0"
+status: frozen
 last_updated: 2026-04-25
 
 # Global ISA parameters
 params:
-  instruction_width: 32
+  instruction_width: 64
   warp_size: 16
   lane_count: 4
   gpr_count: 32
   const_count: 16
   varying_count: 8
   output_count: 4
+  predicate_stack_depth: 8
   loop_stack_depth: 8
+  call_stack_depth: 4
   tex_binding_count: 16
 
 # Register classes
 registers:
-  - {class: gpr,     count: 32, width: 128, scope: per_thread, prefix: r}
-  - {class: const,   count: 16, width: 128, scope: per_warp,   prefix: c}
-  - {class: varying, count: 8,  width: 128, scope: per_thread, prefix: v}
-  - {class: output,  count: 4,  width: 128, scope: per_thread, prefix: o}
-  - {class: predicate, count: 1, width: 16, scope: per_warp,   prefix: p}
+  - {class: gpr,       count: 32, width: 128, scope: per_thread, prefix: r}
+  - {class: const,     count: 16, width: 128, scope: per_warp,   prefix: c}
+  - {class: varying,   count: 8,  width: 128, scope: per_thread, prefix: v}
+  - {class: output,    count: 4,  width: 128, scope: per_thread, prefix: o}
+  - {class: predicate, count: 1,  width: 16,  scope: per_warp,   prefix: p}
+
+# Source class encoding (2-bit, used in src{0,1}_class)
+source_class:
+  "00": gpr
+  "01": const
+  "10": varying
+  "11": reserved   # output 不可作為 source
 
 # Floating point behavior
 fp:
@@ -38,47 +55,114 @@ fp:
   subnormal: flush_to_zero
   rounding: round_to_nearest_even
   nan_propagate: true
-  transcendental_ulp_tolerance: 3
+  precise_ulp_tolerance: 0.5      # add/mul/mad/dp*
+  transcendental_ulp_tolerance: 3 # rcp/rsq/exp/log/sin/cos
 
-# Instruction formats
+# ------------------------------------------------------------------------------
+# Instruction formats — all 64-bit
+# ------------------------------------------------------------------------------
 formats:
-  alu:
-    layout:
-      - {field: opcode, bits: "31:26"}
-      - {field: sat,    bits: "25"}
-      - {field: pred,   bits: "24"}
-      - {field: dst,    bits: "23:19"}
-      - {field: wmask,  bits: "18:15"}     # xyzw write mask
-      - {field: src0,   bits: "14:9"}      # 5-bit reg + 1-bit class
-      - {field: sw0,    bits: "8:7"}
-      - {field: src1,   bits: "6:1"}
-      - {field: sw1_lo, bits: "0"}         # 2-bit swizzle,第 2 bit 借 i-field 第 0 bit
-      # NOTE: 3-op instructions (mad/cmp) extension encoding TBD Phase 0
-  flow:
-    layout:
-      - {field: opcode, bits: "31:26"}
-      - {field: cond,   bits: "25"}
-      - {field: abs,    bits: "24"}
-      - {field: imm,    bits: "23:0"}
-  mem:
-    layout:
-      - {field: opcode, bits: "31:26"}
-      - {field: wmask,  bits: "25:22"}
-      - {field: dst,    bits: "21:17"}
-      - {field: src,    bits: "16:11"}
-      - {field: tex,    bits: "10:7"}
-      - {field: mode,   bits: "6:4"}
-      - {field: pad,    bits: "3:0"}
 
-# Opcode table
+  # ALU / 3-operand: 64-bit
+  alu:
+    bit_width: 64
+    layout:
+      - {field: opcode,        bits: "63:58", desc: "6-bit opcode"}
+      - {field: sat,           bits: "57",    desc: "Saturate result to [0,1]"}
+      - {field: pmd,           bits: "56:55", desc: "00=always, 01=if p, 10=if !p, 11=reserved"}
+      - {field: dst,           bits: "54:50", desc: "GPR destination index (0..31)"}
+      - {field: wmask,         bits: "49:46", desc: "Per-component write mask xyzw (bit per ch)"}
+      - {field: src0_class,    bits: "45:44", desc: "00=gpr, 01=const, 10=varying"}
+      - {field: src0_idx,      bits: "43:39", desc: "Source 0 index"}
+      - {field: src0_swizzle,  bits: "38:31", desc: "8-bit, 2-bit per component (xyzw selector)"}
+      - {field: src0_neg,      bits: "30",    desc: "Negate source 0"}
+      - {field: src0_abs,      bits: "29",    desc: "Absolute value source 0"}
+      - {field: src1_class,    bits: "28:27"}
+      - {field: src1_idx,      bits: "26:22"}
+      - {field: src1_swizzle,  bits: "21:14"}
+      - {field: src1_neg,      bits: "13"}
+      - {field: src1_abs,      bits: "12"}
+      - {field: src2_idx,      bits: "11:7",  desc: "GPR-only, used by 3-operand ops"}
+      - {field: src2_neg,      bits: "6"}
+      - {field: src2_abs,      bits: "5"}
+      - {field: reserved,      bits: "4:0"}
+
+  # Flow control: 64-bit
+  flow:
+    bit_width: 64
+    layout:
+      - {field: opcode,    bits: "63:58"}
+      - {field: pmd,       bits: "57:56", desc: "Predication (same as ALU)"}
+      - {field: abs,       bits: "55",    desc: "Absolute target (1) vs PC-relative (0)"}
+      - {field: imm,       bits: "54:0",  desc: "Signed immediate (target / count)"}
+
+  # Memory + Texture: 64-bit
+  mem:
+    bit_width: 64
+    layout:
+      - {field: opcode,    bits: "63:58"}
+      - {field: pmd,       bits: "57:56"}
+      - {field: dst,       bits: "55:51"}
+      - {field: wmask,     bits: "50:47"}
+      - {field: src,       bits: "46:42",  desc: "GPR providing addr / uv"}
+      - {field: src_swiz,  bits: "41:34",  desc: "8-bit swizzle on src"}
+      - {field: tex,       bits: "33:30",  desc: "Texture binding slot (mem ops use as scratch tag)"}
+      - {field: mode,      bits: "29:27",  desc: "0=plain,1=bias,2=lod,3=grad; mem: 0=ld 1=st"}
+      - {field: imm,       bits: "26:0",   desc: "Signed offset immediate"}
+
+# ------------------------------------------------------------------------------
+# Swizzle encoding (per-component 2-bit selector, 8 bits total)
+#   bits[1:0] = component for output .x  (00=x 01=y 10=z 11=w)
+#   bits[3:2] = component for output .y
+#   bits[5:4] = output .z
+#   bits[7:6] = output .w
+# Identity (.xyzw) = 0b11_10_01_00 = 0xE4
+# Replicate xxxx   = 0b00_00_00_00 = 0x00
+# ------------------------------------------------------------------------------
+swizzle:
+  encoding: per_component_2bit
+  total_bits: 8
+  identity: 0xE4
+  examples:
+    xyzw: 0xE4
+    xxxx: 0x00
+    yyyy: 0x55
+    zzzz: 0xAA
+    wwww: 0xFF
+    yzwx: 0x39          # x<-y(01), y<-z(10), z<-w(11), w<-x(00) -> 00_11_10_01
+
+# Write mask (4-bit; bit 0=x, 1=y, 2=z, 3=w)
+write_mask:
+  bit_0: x
+  bit_1: y
+  bit_2: z
+  bit_3: w
+  identity: 0xF
+
+# Predication mode (2-bit `pmd` field)
+predication:
+  modes:
+    "00": always
+    "01": if_p     # execute lanes where p[lane]=1
+    "10": if_not_p # execute lanes where p[lane]=0
+    "11": reserved
+  predicate_register: p     # 16-bit, 1 bit per lane in warp
+  set_via: setp_<cond>      # see opcodes below
+  stack_push_on: ["if_p", "if_not_p"]
+  stack_pop_on:  ["endif"]
+
+# ------------------------------------------------------------------------------
+# Opcode table (6-bit opcode field across all formats)
+# ------------------------------------------------------------------------------
 opcodes:
-  # ---------------- ALU ----------------
+
+  # ---------------- ALU 2-operand ----------------
   - {name: nop,  format: alu, opcode: 0b000000, semantics: "no op"}
   - {name: mov,  format: alu, opcode: 0b000001, semantics: "dst = src0"}
   - {name: add,  format: alu, opcode: 0b000010, semantics: "dst = src0 + src1"}
   - {name: mul,  format: alu, opcode: 0b000011, semantics: "dst = src0 * src1"}
-  - {name: mad,  format: alu, opcode: 0b000100, semantics: "dst = src0*src1 + src2", operands: 3}
-  - {name: dp3,  format: alu, opcode: 0b000101, semantics: "dst.xyzw = dot3(src0, src1)"}
+  - {name: dp2,  format: alu, opcode: 0b000100, semantics: "dst.xyzw = dot2(src0.xy, src1.xy)"}
+  - {name: dp3,  format: alu, opcode: 0b000101, semantics: "dst.xyzw = dot3(src0.xyz, src1.xyz)"}
   - {name: dp4,  format: alu, opcode: 0b000110, semantics: "dst.xyzw = dot4(src0, src1)"}
   - {name: rcp,  format: alu, opcode: 0b000111, semantics: "dst.xyzw = 1/src0.x"}
   - {name: rsq,  format: alu, opcode: 0b001000, semantics: "dst.xyzw = 1/sqrt(src0.x)"}
@@ -91,61 +175,79 @@ opcodes:
   - {name: abs,  format: alu, opcode: 0b001111, semantics: "dst = abs(src0)"}
   - {name: frc,  format: alu, opcode: 0b010000, semantics: "dst = src0 - floor(src0)"}
   - {name: flr,  format: alu, opcode: 0b010001, semantics: "dst = floor(src0)"}
-  - {name: cmp,  format: alu, opcode: 0b010010, semantics: "dst = src0>=0 ? src1 : src2", operands: 3}
+
+  # ---------------- ALU 3-operand ----------------
+  - {name: mad,  format: alu, opcode: 0b010010, semantics: "dst = src0*src1 + src2", operands: 3}
+  - {name: cmp,  format: alu, opcode: 0b010011, semantics: "dst = src0 >= 0 ? src1 : src2", operands: 3}
+
+  # ---------------- Predicate set ops ----------------
+  - {name: setp_eq, format: alu, opcode: 0b011000, semantics: "p[lane] = (src0 == src1)  (scalar src0.x src1.x)"}
+  - {name: setp_ne, format: alu, opcode: 0b011001, semantics: "p[lane] = (src0 != src1)"}
+  - {name: setp_lt, format: alu, opcode: 0b011010, semantics: "p[lane] = (src0 <  src1)"}
+  - {name: setp_le, format: alu, opcode: 0b011011, semantics: "p[lane] = (src0 <= src1)"}
+  - {name: setp_gt, format: alu, opcode: 0b011100, semantics: "p[lane] = (src0 >  src1)"}
+  - {name: setp_ge, format: alu, opcode: 0b011101, semantics: "p[lane] = (src0 >= src1)"}
 
   # ---------------- Flow ----------------
-  - {name: bra,      format: flow, opcode: 0b100000}
-  - {name: call,     format: flow, opcode: 0b100001}
-  - {name: ret,      format: flow, opcode: 0b100010}
-  - {name: loop,     format: flow, opcode: 0b100011}
-  - {name: endloop,  format: flow, opcode: 0b100100}
-  - {name: break,    format: flow, opcode: 0b100101}
-  - {name: kil,      format: flow, opcode: 0b100110, semantics: "discard pixel (FS only)"}
+  - {name: bra,     format: flow, opcode: 0b100000, semantics: "branch (predicated via pmd)"}
+  - {name: call,    format: flow, opcode: 0b100001}
+  - {name: ret,     format: flow, opcode: 0b100010}
+  - {name: loop,    format: flow, opcode: 0b100011, semantics: "push iteration count + start PC"}
+  - {name: endloop, format: flow, opcode: 0b100100}
+  - {name: break,   format: flow, opcode: 0b100101, semantics: "exit innermost loop (predicated via pmd)"}
+  - {name: if_p,    format: flow, opcode: 0b100110, semantics: "push mask, mask &= p"}
+  - {name: else,    format: flow, opcode: 0b100111, semantics: "invert masked subset"}
+  - {name: endif,   format: flow, opcode: 0b101000, semantics: "pop mask"}
+  - {name: kil,     format: flow, opcode: 0b101001, semantics: "clear mask bit (FS only)"}
 
   # ---------------- Memory ----------------
-  - {name: ld, format: mem, opcode: 0b110000, semantics: "dst = mem[src+imm]"}
-  - {name: st, format: mem, opcode: 0b110001, semantics: "mem[src+imm] = dst"}
+  - {name: ld, format: mem, opcode: 0b110000, semantics: "dst = mem[src + imm]"}
+  - {name: st, format: mem, opcode: 0b110001, semantics: "mem[src + imm] = src (dst field acts as data reg)"}
 
   # ---------------- Texture ----------------
-  - {name: tex,  format: mem, opcode: 0b110100}
-  - {name: texb, format: mem, opcode: 0b110101}
-  - {name: texl, format: mem, opcode: 0b110110}
-  - {name: texg, format: mem, opcode: 0b110111}
+  - {name: tex,  format: mem, opcode: 0b110100, semantics: "dst = tex2D(binding[tex], src.xy)"}
+  - {name: texb, format: mem, opcode: 0b110101, semantics: "with bias from src.w"}
+  - {name: texl, format: mem, opcode: 0b110110, semantics: "with explicit LOD from src.w"}
+  - {name: texg, format: mem, opcode: 0b110111, semantics: "with explicit gradient (uses src2 for dy)"}
 
-# Swizzle encoding (2-bit)
-swizzle:
-  "00": xyzw
-  "01": xxxx
-  "10": yyyy
-  "11": zzzw     # Phase 0 驗證:此 pattern 是否覆蓋常用 case;或擴充至 4-bit
-# NOTE: 若實證 2-bit 不足,擴充到 4-bit swizzle,ALU 格式需要調整
-
-# Write mask encoding (4-bit)
-write_mask:
-  bit_0: x
-  bit_1: y
-  bit_2: z
-  bit_3: w
-
-# Source modifiers (encoded in reserved bits,Phase 0 敲定)
-modifiers:
-  - {name: abs, desc: "take absolute value of source"}
-  - {name: neg, desc: "negate source"}
-
+# ------------------------------------------------------------------------------
 # ABI
+# ------------------------------------------------------------------------------
 abi:
   varying_mapping:
-    description: VS o1..o7 → FS v0..v6; VS o0 = gl_Position
+    description: VS o1..o7 -> FS v0..v6; VS o0 = gl_Position
+    o0_meaning: "VS: gl_Position (clip-space) | FS: gl_FragColor"
   uniform:
-    constant_regs: c0..c15
+    constant_regs: c0..c15      # set by driver via CSR
     uniform_buffer: DRAM via ld
   texture_binding:
     slots: 16
     config_csr_base: 0x00005000
-  entry:
+  scratch:
+    description: "Spilled register storage; driver allocates, compiler emits ld/st"
+  shader_binary_format:
+    layout: "[header][text][constants][metadata]"
     header_fields:
-      - entry_pc
-      - gpr_count
-      - scratch_size
-      - varying_count
-      - uniform_count
+      - magic: "GPU0"
+      - version: u16
+      - flags: u16
+      - entry_pc: u32
+      - gpr_count: u8
+      - scratch_size: u32
+      - varying_in_count: u8
+      - varying_out_count: u8
+      - uniform_count: u8
+      - text_size: u32
+      - constants_size: u32
+      - metadata_size: u32
+
+# ------------------------------------------------------------------------------
+# Validation
+# ------------------------------------------------------------------------------
+validation:
+  expressiveness:
+    reference_shaders:
+      - tests/shader_corpus/ref_shader_1
+      - tests/shader_corpus/ref_shader_2
+      - tests/shader_corpus/ref_shader_3
+    requirement: "all three round-trip via assembler/disassembler and bit-exact via ISA sim"
