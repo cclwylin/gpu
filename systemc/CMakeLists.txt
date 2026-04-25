@@ -31,6 +31,7 @@ message(STATUS "Found SystemC: ${SystemCLanguage_DIR}")
 
 add_library(gpu_systemc STATIC
     blocks/commandprocessor/src/commandprocessor.cpp
+    blocks/commandprocessor/src/commandprocessor_pv.cpp
     blocks/shadercore/src/shadercore.cpp
     blocks/vertexfetch/src/vertexfetch.cpp
     blocks/primitiveassembly/src/primitiveassembly.cpp
@@ -68,5 +69,12 @@ if(GPU_BUILD_TESTS)
             INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
             BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
         add_test(NAME systemc.tlm_hello COMMAND test_tlm_hello)
+
+        add_executable(test_cp_pv tb/test_cp_pv.cpp)
+        target_link_libraries(test_cp_pv PRIVATE gpu_systemc)
+        set_target_properties(test_cp_pv PROPERTIES
+            INSTALL_RPATH "/usr/local/systemc-2.3.4/lib"
+            BUILD_RPATH   "/usr/local/systemc-2.3.4/lib")
+        add_test(NAME systemc.cp_pv COMMAND test_cp_pv)
     endif()
 endif()
