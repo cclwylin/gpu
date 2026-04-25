@@ -55,7 +55,8 @@ Refs: #<issue>
 ## 2. C++ / SystemC Ref / Models
 
 ### 2.1 Standard
-- C++17,libstdc++ / libc++ 均可
+- **C++20**(sw_ref + tools);RTL DUT 部分仍以 SystemC 2.3.x synthesizable subset 為準
+- libstdc++ / libc++ 均可
 - 禁用 RTTI / exceptions in hot path(allowed in tools)
 
 ### 2.2 Headers
