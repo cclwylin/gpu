@@ -18,7 +18,10 @@ gpu::sim::Vec4 persp_divide_and_viewport(const gpu::sim::Vec4& clip,
     const float ndc_z = clip[2] * inv_w;
     out[0] = (ndc_x * 0.5f + 0.5f) * vp_w + vp_x;
     out[1] = (ndc_y * 0.5f + 0.5f) * vp_h + vp_y;
-    out[2] = ndc_z * 0.5f + 0.5f;
+    // Clamp to [0,1] for stability — matches sw_ref's PA.
+    float z = ndc_z * 0.5f + 0.5f;
+    if (z < 0.0f) z = 0.0f; else if (z > 1.0f) z = 1.0f;
+    out[2] = z;
     out[3] = inv_w;
     return out;
 }

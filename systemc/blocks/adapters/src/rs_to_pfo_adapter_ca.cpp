@@ -1,6 +1,5 @@
 #include "gpu_systemc/rs_to_pfo_adapter_ca.h"
 
-#include <map>
 #include <utility>
 
 namespace gpu::systemc {
@@ -31,15 +30,18 @@ void RsToPfoAdapterCa::thread() {
         RasterJob* const rj = reinterpret_cast<RasterJob*>(job_word);
         job_ready_o.write(false);
 
-        // ---- group fragments into quads ----
-        std::map<std::pair<int,int>, gpu::Quad> bucket;
+        // ---- emit one quad per fragment in SCANLINE ORDER ----
+        // Real GPUs group adjacent fragments into quads for derivative
+        // support, but that batches across overlapping triangles and
+        // changes which fragment wins under DEPTH_LESS. sw_ref iterates
+        // fragments scanline-strict; for sw_ref↔SC RMSE parity, do the
+        // same here. The "Quad" is then a single-active-lane container.
+        const size_t base = staged_quads_.size();
         if (rj) {
             for (const auto& f : rj->fragments) {
-                const int qx = f.x >> 1;
-                const int qy = f.y >> 1;
-                const int lane = ((f.y & 1) << 1) | (f.x & 1);
-                auto& q = bucket[{qy, qx}];
-                auto& frag = q.frags[lane];
+                staged_quads_.emplace_back();
+                gpu::Quad& q = staged_quads_.back();
+                auto& frag = q.frags[0];
                 frag.pos = {f.x, f.y};
                 frag.coverage_mask = f.coverage_mask;
                 frag.depth = f.depth;
@@ -49,11 +51,6 @@ void RsToPfoAdapterCa::thread() {
                 frag.varying_count = static_cast<uint8_t>(rj->varying_count);
             }
         }
-        // Append this batch's quads to the deque. Old entries from
-        // previous batches stay alive — PFO may still be dereferencing
-        // their pointers as we lay down the new batch.
-        const size_t base = staged_quads_.size();
-        for (auto& kv : bucket) staged_quads_.push_back(std::move(kv.second));
         for (size_t i = base; i < staged_quads_.size(); ++i) {
             pfo_jobs_.emplace_back();
             pfo_jobs_.back().ctx  = ctx;
