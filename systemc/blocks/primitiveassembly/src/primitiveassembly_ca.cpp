@@ -66,25 +66,66 @@ void PrimitiveAssemblyCa::thread() {
         if (job) {
             job->triangles.clear();
             const auto& vsout = job->vs_outputs;
+            // Sutherland-Hodgman near/far Z clip on each triangle.
+            using Vert = std::array<gpu::sim::Vec4, 4>;
+            auto lerp_v = [](const Vert& a, const Vert& b, float t) {
+                Vert r{};
+                for (int v = 0; v < 4; ++v)
+                    for (int k = 0; k < 4; ++k)
+                        r[v][k] = a[v][k] + t * (b[v][k] - a[v][k]);
+                return r;
+            };
+            auto clip_against = [&](std::vector<Vert>& in,
+                                    std::vector<Vert>& out,
+                                    auto dist) {
+                out.clear();
+                if (in.empty()) return;
+                for (size_t k = 0; k < in.size(); ++k) {
+                    const Vert& a = in[k];
+                    const Vert& b = in[(k + 1) % in.size()];
+                    const float da = dist(a[0]);
+                    const float db = dist(b[0]);
+                    if (da >= 0.0f) out.push_back(a);
+                    if ((da >= 0.0f) != (db >= 0.0f)) {
+                        const float t = da / (da - db);
+                        out.push_back(lerp_v(a, b, t));
+                    }
+                }
+            };
             for (size_t i = 0; i + 2 < vsout.size(); i += 3) {
-                std::array<std::array<gpu::sim::Vec4, 4>, 3> tri;
-                tri[0] = vsout[i];
-                tri[1] = vsout[i + 1];
-                tri[2] = vsout[i + 2];
-                tri[0][0] = persp_divide_and_viewport(vsout[i][0],
-                                                     job->vp_x, job->vp_y,
-                                                     job->vp_w, job->vp_h);
-                tri[1][0] = persp_divide_and_viewport(vsout[i + 1][0],
-                                                     job->vp_x, job->vp_y,
-                                                     job->vp_w, job->vp_h);
-                tri[2][0] = persp_divide_and_viewport(vsout[i + 2][0],
-                                                     job->vp_x, job->vp_y,
-                                                     job->vp_w, job->vp_h);
-                if (job->cull_back &&
-                    back_face_cull(tri[0][0], tri[1][0], tri[2][0])) continue;
-                job->triangles.push_back(tri);
-                wait();        // 1 cycle / triangle (post-divide)
-                wait();        // + 1 cycle / triangle (cull / emit)
+                std::vector<Vert> p, q;
+                p.reserve(5); q.reserve(5);
+                Vert va{}, vb{}, vc{};
+                va[0] = vsout[i][0];     va[1] = vsout[i][1];
+                va[2] = vsout[i][2];     va[3] = vsout[i][3];
+                vb[0] = vsout[i+1][0];   vb[1] = vsout[i+1][1];
+                vb[2] = vsout[i+1][2];   vb[3] = vsout[i+1][3];
+                vc[0] = vsout[i+2][0];   vc[1] = vsout[i+2][1];
+                vc[2] = vsout[i+2][2];   vc[3] = vsout[i+2][3];
+                p = {va, vb, vc};
+                clip_against(p, q,
+                    [](const gpu::sim::Vec4& v) { return v[2] + v[3]; }); // near
+                if (q.empty()) continue;
+                clip_against(q, p,
+                    [](const gpu::sim::Vec4& v) { return v[3] - v[2]; }); // far
+                if (p.size() < 3) continue;
+                // Fan-triangulate the clipped polygon (3..5 verts).
+                for (size_t fi = 1; fi + 1 < p.size(); ++fi) {
+                    std::array<gpu::sim::Vec4, 4> a0 = p[0], a1 = p[fi], a2 = p[fi+1];
+                    std::array<std::array<gpu::sim::Vec4, 4>, 3> tri;
+                    tri[0] = a0; tri[1] = a1; tri[2] = a2;
+                    tri[0][0] = persp_divide_and_viewport(a0[0],
+                        job->vp_x, job->vp_y, job->vp_w, job->vp_h);
+                    tri[1][0] = persp_divide_and_viewport(a1[0],
+                        job->vp_x, job->vp_y, job->vp_w, job->vp_h);
+                    tri[2][0] = persp_divide_and_viewport(a2[0],
+                        job->vp_x, job->vp_y, job->vp_w, job->vp_h);
+                    if (job->cull_back &&
+                        back_face_cull(tri[0][0], tri[1][0], tri[2][0])) continue;
+                    job->triangles.push_back(tri);
+                    wait();
+                    wait();
+                }
             }
         }
 

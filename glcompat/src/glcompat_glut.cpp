@@ -31,6 +31,14 @@ struct GlutWindow {
     void (*display_cb)(void) = nullptr;
     void (*reshape_cb)(int, int) = nullptr;
     void (*overlay_cb)(void) = nullptr;
+    // Per-window persistent GL matrix stacks. Real GLUT gives each
+    // window an independent GL context; without this, programs like
+    // sphere.c that call init() once per window stack the
+    // perspective/lookAt matrices on top of each other.
+    bool                            init_matrices = false;
+    std::vector<glcompat::Mat4>     modelview;
+    std::vector<glcompat::Mat4>     projection;
+    std::vector<glcompat::Mat4>     texmat;
 };
 
 struct GlutState {
@@ -43,6 +51,35 @@ struct GlutState {
 };
 GlutState& gs() { static GlutState g; return g; }
 GlutWindow& cw() { return gs().windows[gs().current]; }
+
+// Save the active GL matrix stacks into the outgoing window slot, then
+// load the incoming window's stacks into the live state. New windows
+// (init_matrices==false) get fresh identity stacks to avoid inheriting
+// state from whatever was created last.
+void switch_to_window(int new_idx) {
+    auto& g = gs();
+    auto& s = glcompat::state();
+    if (new_idx == g.current) return;
+    if (g.current >= 0 && g.current < (int)g.windows.size()) {
+        auto& cur = g.windows[g.current];
+        cur.modelview  = s.modelview;
+        cur.projection = s.projection;
+        cur.texmat     = s.texmat;
+        cur.init_matrices = true;
+    }
+    g.current = new_idx;
+    auto& nw = g.windows[new_idx];
+    if (!nw.init_matrices) {
+        nw.modelview  = {glcompat::mat4_identity()};
+        nw.projection = {glcompat::mat4_identity()};
+        nw.texmat     = {glcompat::mat4_identity()};
+        nw.init_matrices = true;
+    }
+    s.modelview  = nw.modelview;
+    s.projection = nw.projection;
+    s.texmat     = nw.texmat;
+    s.matrix_mode = GL_MODELVIEW;
+}
 }  // namespace
 
 extern "C" {
@@ -54,25 +91,34 @@ void glutInitWindowSize(int w, int h)               { gs().win_w = w; gs().win_h
 void glutInitWindowPosition(int x, int y)           { gs().win_x = x; gs().win_y = y; }
 int  glutCreateWindow(const char*) {
     auto& g = gs();
-    // The sole entry created at static-init covers the main window.
-    g.current = 0;
-    g.windows[0].x = g.win_x;
-    g.windows[0].y = g.win_y;
-    g.windows[0].w = g.win_w;
-    g.windows[0].h = g.win_h;
-    return 1;
+    int idx;
+    if (g.windows.size() == 1 && g.windows[0].display_cb == nullptr) {
+        idx = 0;
+        g.windows[0].x = g.win_x; g.windows[0].y = g.win_y;
+        g.windows[0].w = g.win_w; g.windows[0].h = g.win_h;
+    } else {
+        g.windows.emplace_back();
+        idx = (int)g.windows.size() - 1;
+        g.windows[idx].x = g.win_x; g.windows[idx].y = g.win_y;
+        g.windows[idx].w = g.win_w; g.windows[idx].h = g.win_h;
+    }
+    switch_to_window(idx);
+    return idx + 1;
 }
 int  glutCreateSubWindow(int /*parent*/, int x, int y, int w, int h) {
     auto& g = gs();
-    g.windows.push_back({x, y, w, h, nullptr, nullptr, nullptr});
-    g.current = (int)g.windows.size() - 1;
-    return g.current + 1;     // GLUT IDs are 1-based
+    g.windows.emplace_back();
+    int idx = (int)g.windows.size() - 1;
+    g.windows[idx].x = x; g.windows[idx].y = y;
+    g.windows[idx].w = w; g.windows[idx].h = h;
+    switch_to_window(idx);
+    return idx + 1;
 }
 void glutDestroyWindow(int)                         {}
 void glutSetWindow(int id) {
     auto& g = gs();
     const int i = id - 1;
-    if (i >= 0 && i < (int)g.windows.size()) g.current = i;
+    if (i >= 0 && i < (int)g.windows.size()) switch_to_window(i);
 }
 int  glutGetWindow(void)                            { return gs().current + 1; }
 void glutSetWindowTitle(const char*)                {}
@@ -184,25 +230,17 @@ int  glutUseLayer(GLenum)                                   { return 0; }
 
 void glutMainLoop(void) {
     auto& g = gs();
-    // Run reshape + display for every window we know about. Subwindows
-    // inherit the main reshape if they didn't register their own. We
-    // restore the GL viewport per-window so each draws into its own
-    // rectangle of the shared framebuffer.
+    // Run reshape + display for every window. Each window has its own
+    // matrix stacks (via switch_to_window) and viewport.
     for (size_t i = 0; i < g.windows.size(); ++i) {
-        g.current = (int)i;
+        switch_to_window((int)i);
         auto& w = g.windows[i];
         if (i == 0) {
-            // Main window: full requested size.
             glViewport(0, 0, g.win_w, g.win_h);
             if (w.reshape_cb) w.reshape_cb(g.win_w, g.win_h);
-            else              glViewport(0, 0, g.win_w, g.win_h);
             if (w.display_cb) w.display_cb();
-            // Run the overlay callback (if any) right after main —
-            // captures cases like oversphere.c which puts all its
-            // visible content in the overlay path.
             if (w.overlay_cb) w.overlay_cb();
         } else {
-            // Subwindow: position + size known from glutCreateSubWindow.
             glViewport(w.x, w.y, w.w, w.h);
             if (w.reshape_cb) w.reshape_cb(w.w, w.h);
             if (w.display_cb) w.display_cb();

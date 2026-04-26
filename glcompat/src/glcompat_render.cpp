@@ -316,6 +316,16 @@ void flush_immediate() {
     positions.reserve(tris.size() * 3);
     colours.reserve(tris.size() * 3);
     const bool capture_scene = std::getenv("GLCOMPAT_SCENE") != nullptr;
+    // Pre-compute viewport-bake factors: when capturing a scene, the
+    // SC chain has only one fb-wide viewport, so we collapse the
+    // current viewport into clip-space here. Without this, multi-
+    // window scenes would draw all sub-window content at the full fb
+    // viewport on the SC side.
+    const int FB_W = s.ctx.fb.width  > 0 ? s.ctx.fb.width  : 1;
+    const int FB_H = s.ctx.fb.height > 0 ? s.ctx.fb.height : 1;
+    const bool need_vp_bake = capture_scene
+        && (s.vp_x != 0 || s.vp_y != 0
+            || s.vp_w != FB_W || s.vp_h != FB_H);
     for (const auto& t : tris) {
         int i0 = t[0], i1 = t[1], i2 = t[2];
         if (!s.cull_face) {
@@ -341,8 +351,25 @@ void flush_immediate() {
             gpu::Vec4f c{}; c[0]=lv.color[0]; c[1]=lv.color[1]; c[2]=lv.color[2]; c[3]=lv.color[3];
             positions.push_back(p);
             colours.push_back(c);
-            if (capture_scene)
-                g_scene_buf.push_back({lv.clip, lv.color});
+            if (capture_scene) {
+                Vec4 cap = lv.clip;
+                if (need_vp_bake) {
+                    // Bake viewport: divide by w, scale/offset NDC into
+                    // fb-NDC, store with w=1 so PA's persp-divide is a
+                    // no-op on this side.
+                    const float w = cap[3] != 0 ? cap[3] : 1;
+                    const float ndc_x = cap[0] / w;
+                    const float ndc_y = cap[1] / w;
+                    const float ndc_z = cap[2] / w;
+                    const float fbx = (s.vp_x + (ndc_x * 0.5f + 0.5f) * s.vp_w);
+                    const float fby = (s.vp_y + (ndc_y * 0.5f + 0.5f) * s.vp_h);
+                    cap[0] = 2.0f * fbx / FB_W - 1.0f;
+                    cap[1] = 2.0f * fby / FB_H - 1.0f;
+                    cap[2] = ndc_z;
+                    cap[3] = 1.0f;
+                }
+                g_scene_buf.push_back({cap, lv.color});
+            }
         }
     }
 
