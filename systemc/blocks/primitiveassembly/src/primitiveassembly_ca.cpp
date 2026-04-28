@@ -70,7 +70,7 @@ void PrimitiveAssemblyCa::thread() {
             job->triangles.clear();
             const auto& vsout = job->vs_outputs;
             // Sutherland-Hodgman near/far Z clip on each triangle.
-            using Vert = std::array<gpu::sim::Vec4, 4>;
+            using Vert = std::array<gpu::sim::Vec4, 8>;
             auto lerp_v = [](const Vert& a, const Vert& b, float t) {
                 Vert r{};
                 for (int v = 0; v < 4; ++v)
@@ -114,8 +114,8 @@ void PrimitiveAssemblyCa::thread() {
                 if (p.size() < 3) continue;
                 // Fan-triangulate the clipped polygon (3..5 verts).
                 for (size_t fi = 1; fi + 1 < p.size(); ++fi) {
-                    std::array<gpu::sim::Vec4, 4> a0 = p[0], a1 = p[fi], a2 = p[fi+1];
-                    std::array<std::array<gpu::sim::Vec4, 4>, 3> tri;
+                    std::array<gpu::sim::Vec4, 8> a0 = p[0], a1 = p[fi], a2 = p[fi+1];
+                    std::array<std::array<gpu::sim::Vec4, 8>, 3> tri;
                     tri[0] = a0; tri[1] = a1; tri[2] = a2;
                     tri[0][0] = persp_divide_and_viewport(a0[0],
                         job->vp_x, job->vp_y, job->vp_w, job->vp_h);

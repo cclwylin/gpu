@@ -13,3 +13,6 @@ verts
 end
 # Pixel sentinel: at least N pixels with R>=240
 expect_min_white 100
+# Sprint 41 — golden + RMSE budget enables sw_ref ↔ SC bit-parity track.
+golden_ppm      triangle_white.golden.ppm
+expect_rmse_max 0.5

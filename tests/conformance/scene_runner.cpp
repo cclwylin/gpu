@@ -27,68 +27,89 @@
 
 namespace {
 
-struct Scene {
-    int width = 32;
-    int height = 32;
-    bool msaa = false;
-    uint32_t clear_rgba = 0;
-    std::vector<gpu::Vec4f> positions;
-    std::vector<gpu::Vec4f> colours;
-    int    expect_min_white = -1;
-    int    expect_edge_min  = -1;
-    std::string golden_ppm;          // path relative to scene file
-    float  expect_rmse_max  = -1.0f;
-    // Sprint 40 — render state captured by glcompat (when emitted via
-    // GLCOMPAT_SCENE). Falls back to scene_runner's historic defaults
-    // when keys are absent.
+// Sprint 40 — multi-batch scenes. Each batch carries its own render
+// state snapshot so glcompat captures of programs that toggle depth/
+// blend mid-frame (movelight torus + bitmap-font HUD, etc.) replay
+// faithfully. Legacy single-state scenes parse as one implicit batch.
+struct Batch {
     bool   depth_test  = false;
     bool   depth_write = true;
     std::string depth_func = "less";
     bool   cull_back  = false;
     bool   blend      = false;
+    std::vector<gpu::Vec4f> positions;
+    std::vector<gpu::Vec4f> colours;
+};
+
+struct Scene {
+    int width = 32;
+    int height = 32;
+    bool msaa = false;
+    uint32_t clear_rgba = 0;
+    std::vector<Batch> batches;
+    int    expect_min_white = -1;
+    int    expect_edge_min  = -1;
+    std::string golden_ppm;          // path relative to scene file
+    float  expect_rmse_max  = -1.0f;
 };
 
 bool parse_scene(const std::string& path, Scene& s, std::string& err) {
     std::ifstream f(path);
     if (!f) { err = "cannot open " + path; return false; }
+    Batch defaults;
+    Batch* cur = nullptr;
+    Batch  legacy;
+    bool   has_legacy_verts = false;
+    bool   in_verts = false;
     std::string line;
-    bool in_verts = false;
     while (std::getline(f, line)) {
-        if (line.empty()) continue;
-        if (line[0] == '#') continue;
+        const size_t fnw = line.find_first_not_of(" \t");
+        if (fnw == std::string::npos || line[fnw] == '#') continue;
         if (in_verts) {
-            if (line.rfind("end", 0) == 0) { in_verts = false; continue; }
             std::istringstream is(line);
+            std::string first; is >> first;
+            if (first == "end" || first == "end_verts") { in_verts = false; continue; }
+            std::istringstream is2(line);
             float x, y, z, w, r, g, b, a;
-            if (!(is >> x >> y >> z >> w >> r >> g >> b >> a)) {
-                err = "bad vertex line"; return false;
+            if (!(is2 >> x >> y >> z >> w >> r >> g >> b >> a)) {
+                err = "bad vertex line: " + line; return false;
             }
-            s.positions.push_back({{x, y, z, w}});
-            s.colours.push_back({{r, g, b, a}});
+            Batch* tgt = cur ? cur : (has_legacy_verts ? &legacy : (legacy = defaults, has_legacy_verts = true, &legacy));
+            tgt->positions.push_back({{x, y, z, w}});
+            tgt->colours.push_back({{r, g, b, a}});
             continue;
         }
         std::istringstream is(line);
         std::string key; is >> key;
-        if      (key == "width")  is >> s.width;
-        else if (key == "height") is >> s.height;
-        else if (key == "msaa")   { int v; is >> v; s.msaa = v != 0; }
-        else if (key == "clear")  { uint32_t v; is >> std::hex >> v >> std::dec; s.clear_rgba = v; }
-        else if (key == "verts")  in_verts = true;
-        else if (key == "expect_min_white") is >> s.expect_min_white;
-        else if (key == "expect_edge_min")  is >> s.expect_edge_min;
-        else if (key == "golden_ppm")       is >> s.golden_ppm;
-        else if (key == "expect_rmse_max")  is >> s.expect_rmse_max;
-        else if (key == "depth_test")  { int v; is >> v; s.depth_test  = v != 0; }
-        else if (key == "depth_write") { int v; is >> v; s.depth_write = v != 0; }
-        else if (key == "depth_func")  { is >> s.depth_func; }
-        else if (key == "cull_back")   { int v; is >> v; s.cull_back   = v != 0; }
-        else if (key == "blend")       { int v; is >> v; s.blend       = v != 0; }
+        if (key == "batch") {
+            s.batches.emplace_back(defaults);
+            cur = &s.batches.back();
+            continue;
+        }
+        if (key == "end_batch") { cur = nullptr; continue; }
+        if (key == "width")  { is >> s.width;  continue; }
+        if (key == "height") { is >> s.height; continue; }
+        if (key == "msaa")   { int v; is >> v; s.msaa = (v != 0); continue; }
+        if (key == "clear")  { uint32_t v; is >> std::hex >> v >> std::dec; s.clear_rgba = v; continue; }
+        if (key == "expect_min_white") { is >> s.expect_min_white; continue; }
+        if (key == "expect_edge_min")  { is >> s.expect_edge_min;  continue; }
+        if (key == "golden_ppm")       { is >> s.golden_ppm;       continue; }
+        if (key == "expect_rmse_max")  { is >> s.expect_rmse_max;  continue; }
+        Batch* tgt = cur ? cur : &defaults;
+        if      (key == "depth_test")  { int v; is >> v; tgt->depth_test  = v != 0; }
+        else if (key == "depth_write") { int v; is >> v; tgt->depth_write = v != 0; }
+        else if (key == "depth_func")  { is >> tgt->depth_func; }
+        else if (key == "cull_back")   { int v; is >> v; tgt->cull_back   = v != 0; }
+        else if (key == "blend")       { int v; is >> v; tgt->blend       = v != 0; }
+        else if (key == "verts")       { in_verts = true; }
         else { err = "unknown key '" + key + "'"; return false; }
     }
-    // Empty scenes are allowed (clear-only frames like stereo.c).
-    if (s.positions.size() % 3 != 0) {
-        err = "vertex count must be a multiple of 3";
-        return false;
+    if (has_legacy_verts) s.batches.push_back(std::move(legacy));
+    for (const auto& b : s.batches) {
+        if (b.positions.size() % 3 != 0) {
+            err = "batch vertex count must be a multiple of 3";
+            return false;
+        }
     }
     return true;
 }
@@ -197,39 +218,46 @@ int main(int argc, char** argv) {
         ctx.fb.msaa_4x = true;
         ctx.fb.color_samples.assign(scene.width * scene.height * 4, scene.clear_rgba);
     }
+    bool any_depth_test = false;
+    for (const auto& b : scene.batches)
+        if (b.depth_test) { any_depth_test = true; break; }
+    if (any_depth_test)
+        ctx.fb.depth.assign((size_t)scene.width * scene.height, 1.0f);
     ctx.draw.vp_w = scene.width;
     ctx.draw.vp_h = scene.height;
     ctx.draw.primitive = gpu::DrawState::TRIANGLES;
-    ctx.draw.depth_test  = scene.depth_test;
-    ctx.draw.depth_write = scene.depth_write;
-    if (scene.depth_test && scene.depth_test &&
-        ctx.fb.depth.empty())
-        ctx.fb.depth.assign((size_t)scene.width * scene.height, 1.0f);
-    {
-        using DF = gpu::DrawState;
-        if      (scene.depth_func == "never")    ctx.draw.depth_func = DF::DF_NEVER;
-        else if (scene.depth_func == "less")     ctx.draw.depth_func = DF::DF_LESS;
-        else if (scene.depth_func == "lequal")   ctx.draw.depth_func = DF::DF_LEQUAL;
-        else if (scene.depth_func == "equal")    ctx.draw.depth_func = DF::DF_EQUAL;
-        else if (scene.depth_func == "gequal")   ctx.draw.depth_func = DF::DF_GEQUAL;
-        else if (scene.depth_func == "greater")  ctx.draw.depth_func = DF::DF_GREATER;
-        else if (scene.depth_func == "notequal") ctx.draw.depth_func = DF::DF_NOTEQUAL;
-        else if (scene.depth_func == "always")   ctx.draw.depth_func = DF::DF_ALWAYS;
-    }
-    ctx.draw.cull_back    = scene.cull_back;
-    ctx.draw.blend_enable = scene.blend;
-    ctx.attribs[0] = {true, 4, gpu::VertexAttribBinding::F32,
-                      sizeof(gpu::Vec4f), 0, scene.positions.data()};
-    ctx.attribs[1] = {true, 4, gpu::VertexAttribBinding::F32,
-                      sizeof(gpu::Vec4f), 0, scene.colours.data()};
     ctx.shaders.vs_binary = &vs_bin;
     ctx.shaders.fs_binary = &fs_bin;
     ctx.shaders.vs_attr_count    = 2;
     ctx.shaders.vs_varying_count = 1;
     ctx.shaders.fs_varying_count = 1;
-
-    gpu::pipeline::draw(ctx,
-                       static_cast<uint32_t>(scene.positions.size()));
+    auto apply_batch = [&](const Batch& b) {
+        ctx.draw.depth_test  = b.depth_test;
+        ctx.draw.depth_write = b.depth_write;
+        ctx.draw.cull_back   = b.cull_back;
+        ctx.draw.blend_enable = b.blend;
+        using DF = gpu::DrawState;
+        if      (b.depth_func == "never")    ctx.draw.depth_func = DF::DF_NEVER;
+        else if (b.depth_func == "less")     ctx.draw.depth_func = DF::DF_LESS;
+        else if (b.depth_func == "lequal")   ctx.draw.depth_func = DF::DF_LEQUAL;
+        else if (b.depth_func == "equal")    ctx.draw.depth_func = DF::DF_EQUAL;
+        else if (b.depth_func == "gequal")   ctx.draw.depth_func = DF::DF_GEQUAL;
+        else if (b.depth_func == "greater")  ctx.draw.depth_func = DF::DF_GREATER;
+        else if (b.depth_func == "notequal") ctx.draw.depth_func = DF::DF_NOTEQUAL;
+        else if (b.depth_func == "always")   ctx.draw.depth_func = DF::DF_ALWAYS;
+    };
+    size_t total_verts = 0;
+    for (const auto& batch : scene.batches) {
+        if (batch.positions.empty()) continue;
+        apply_batch(batch);
+        ctx.attribs[0] = {true, 4, gpu::VertexAttribBinding::F32,
+                          sizeof(gpu::Vec4f), 0, batch.positions.data()};
+        ctx.attribs[1] = {true, 4, gpu::VertexAttribBinding::F32,
+                          sizeof(gpu::Vec4f), 0, batch.colours.data()};
+        gpu::pipeline::draw(ctx,
+                           static_cast<uint32_t>(batch.positions.size()));
+        total_verts += batch.positions.size();
+    }
 
     int white = 0, edge = 0;
     for (uint32_t c : ctx.fb.color) {
@@ -260,7 +288,7 @@ int main(int argc, char** argv) {
         }
         std::printf("PPM=%s\n", out_ppm.c_str());
         std::printf("PAINTED=%d\n", white + edge);
-        std::printf("TRIANGLES=%zu\n", scene.positions.size() / 3);
+        std::printf("TRIANGLES=%zu\n", total_verts / 3);
         return 0;
     }
 

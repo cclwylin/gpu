@@ -38,6 +38,13 @@ SC_MODULE(ScToPaAdapterCa) {
     sc_core::sc_out<uint64_t> out_data_o;
 
     int batch_size = 3;
+    // Sprint 61 — also forward viewport offset so the SC chain renders
+    // into the test's viewport (e.g. `glViewport(168, 91, 64, 64)`).
+    // Pre-Sprint-61 only vp_w / vp_h were tracked; PA's clip-→screen
+    // transform read vp_x = vp_y = 0 from the job and the SC chain
+    // always rendered into the bottom-left of the fb.
+    int vp_x = 0;
+    int vp_y = 0;
     int vp_w = 32;
     int vp_h = 32;
     bool cull_back = false;

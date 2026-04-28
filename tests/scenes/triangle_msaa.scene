@@ -9,3 +9,6 @@ verts
  0.7  -0.7  0.0  1.0   1.0  1.0  1.0  1.0
 end
 expect_edge_min 10
+# Sprint 41 — golden + RMSE budget enables sw_ref ↔ SC bit-parity track.
+golden_ppm      triangle_msaa.golden.ppm
+expect_rmse_max 0.5

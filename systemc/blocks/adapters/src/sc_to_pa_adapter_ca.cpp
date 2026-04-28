@@ -26,6 +26,8 @@ void ScToPaAdapterCa::thread() {
         // never races with the next batch's reset.
         staged_queue_.emplace_back();
         PrimAssemblyJob& staged = staged_queue_.back();
+        staged.vp_x = vp_x;
+        staged.vp_y = vp_y;
         staged.vp_w = vp_w;
         staged.vp_h = vp_h;
         staged.cull_back = cull_back;

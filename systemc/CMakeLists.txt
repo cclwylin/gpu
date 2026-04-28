@@ -57,14 +57,23 @@ add_library(gpu_systemc STATIC
     blocks/primitiveassembly/src/primitiveassembly_ca.cpp
     blocks/rasterizer/src/rasterizer_lt.cpp
     blocks/rasterizer/src/rasterizer_ca.cpp
+    blocks/textureunit/src/textureunit_lt.cpp
     blocks/textureunit/src/textureunit_ca.cpp
+    blocks/perfragmentops/src/perfragmentops_lt.cpp
     blocks/perfragmentops/src/perfragmentops_ca.cpp
+    blocks/tilebuffer/src/tilebuffer_lt.cpp
     blocks/tilebuffer/src/tilebuffer_ca.cpp
+    blocks/resolveunit/src/resolveunit_lt.cpp
     blocks/resolveunit/src/resolveunit_ca.cpp
+    blocks/memorymanagementunit/src/memorymanagementunit_lt.cpp
     blocks/memorymanagementunit/src/memorymanagementunit_ca.cpp
+    blocks/l2cache/src/l2cache_lt.cpp
     blocks/l2cache/src/l2cache_ca.cpp
+    blocks/memorycontroller/src/memorycontroller_lt.cpp
     blocks/memorycontroller/src/memorycontroller_ca.cpp
+    blocks/controlstatusregister/src/controlstatusregister_lt.cpp
     blocks/controlstatusregister/src/controlstatusregister_ca.cpp
+    blocks/perfmonitorunit/src/perfmonitorunit_lt.cpp
     blocks/perfmonitorunit/src/perfmonitorunit_ca.cpp
     blocks/tilebinner/src/tilebinner_ca.cpp
     blocks/adapters/src/sc_to_pa_adapter_ca.cpp
@@ -93,6 +102,17 @@ target_include_directories(gpu_systemc PUBLIC
     blocks/tilebinner/include
     blocks/adapters/include
     top/include)
+
+# Sprint 59 — SystemC's `sc_api_version_*` symbol embeds the C++
+# standard the headers were compiled against (C++17 in our installed
+# /usr/local/systemc-2.3.4 → `sc_api_version_2_3_4_cxx201703L`). Our
+# project compiles with C++20, so without an override the macro expands
+# to `cxx202002L` and the link fails with an unresolved api-version
+# symbol. We can't downgrade the compile to C++17 because sw_ref/
+# pipeline.h uses `std::span`, so instead we override SystemC's
+# C++-detection macro to claim 201703L. The api version tag matches the
+# .dylib, the rest of our code keeps its C++20 features.
+target_compile_definitions(gpu_systemc PUBLIC SC_CPLUSPLUS=201703L)
 target_link_libraries(gpu_systemc PUBLIC SystemC::systemc gpu_compiler gpu_sw_ref)
 set_target_properties(gpu_systemc PROPERTIES
     INSTALL_RPATH "${_SC_LIB_DIR}"
@@ -147,6 +167,14 @@ if(GPU_BUILD_TESTS)
         _gpu_add_systemc_test(test_rs_pfo_adapter_ca      tb/test_rs_pfo_adapter_ca.cpp)
         _gpu_add_systemc_test(test_pfo_tbf_adapter_ca     tb/test_pfo_tbf_adapter_ca.cpp)
         _gpu_add_systemc_test(test_full_chain_ca          tb/test_full_chain_ca.cpp)
+
+        # Phase-1 LT block coverage (follow-ups 2-5).
+        _gpu_add_systemc_test(test_textureunit_lt         tb/test_textureunit_lt.cpp)
+        _gpu_add_systemc_test(test_perfragmentops_lt      tb/test_perfragmentops_lt.cpp)
+        _gpu_add_systemc_test(test_tilebuffer_resolve_lt  tb/test_tilebuffer_resolve_lt.cpp)
+        _gpu_add_systemc_test(test_memory_subsystem_lt    tb/test_memory_subsystem_lt.cpp)
+        _gpu_add_systemc_test(test_sidebands_lt           tb/test_sidebands_lt.cpp)
+        _gpu_add_systemc_test(test_cp_dispatch            tb/test_cp_dispatch.cpp)
     endif()
 endif()
 

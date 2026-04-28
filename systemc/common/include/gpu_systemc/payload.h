@@ -17,9 +17,14 @@ namespace gpu::systemc {
 // Sprint 5 keeps it deliberately tiny: one ISA program + per-thread inputs.
 // Phase-1.x will replace this with proper TLM-2.0 generic_payload extensions
 // and per-block typed transactions.
+// Sprint 59 — widen `constants` 16→32 (Sprint 56 ISA-side bump) and
+// `outputs` 4→8 (Sprint 58 ISA-side bump). Without these the SystemC
+// chain's ShaderJob/VertexFetchJob/PrimAssemblyJob still claim the
+// pre-Sprint-56 sizes and `t.c = job->constants` / `job->outputs =
+// t.o` fail to compile against the matching `ThreadState` arrays.
 struct ShaderJob {
     const std::vector<uint64_t>* code = nullptr;     // ISA binary (shared)
-    std::array<gpu::sim::Vec4, 16> constants{};
+    std::array<gpu::sim::Vec4, 32> constants{};
     std::array<gpu::sim::Vec4, 8>  attrs{};          // VS only
     std::array<gpu::sim::Vec4, 8>  varying_in{};     // FS only
     int                            attr_count = 0;
@@ -27,26 +32,26 @@ struct ShaderJob {
     bool                           is_vs = true;
 
     // outputs, populated by SC
-    std::array<gpu::sim::Vec4, 4>  outputs{};
+    std::array<gpu::sim::Vec4, 8>  outputs{};
     bool                           lane_active = true;
 };
 
 // VertexFetchJob — driven by CP, fans out per-vertex ShaderJobs through SC.
 struct VertexFetchJob {
     const std::vector<uint64_t>* vs_code = nullptr;
-    std::array<gpu::sim::Vec4, 16> constants{};
+    std::array<gpu::sim::Vec4, 32> constants{};
     int attr_count = 0;
     int vertex_count = 0;
     std::vector<std::array<gpu::sim::Vec4, 8>> vertices;        // attrs per vertex
-    std::vector<std::array<gpu::sim::Vec4, 4>> vs_outputs;      // populated by VF after SC
+    std::vector<std::array<gpu::sim::Vec4, 8>> vs_outputs;      // populated by VF after SC
 };
 
 // PrimAssemblyJob — clip-space VS outputs in, screen-space triangles out.
 struct PrimAssemblyJob {
-    std::vector<std::array<gpu::sim::Vec4, 4>> vs_outputs;
+    std::vector<std::array<gpu::sim::Vec4, 8>> vs_outputs;
     int  vp_x = 0, vp_y = 0, vp_w = 0, vp_h = 0;
     bool cull_back = false;
-    std::vector<std::array<std::array<gpu::sim::Vec4, 4>, 3>> triangles;
+    std::vector<std::array<std::array<gpu::sim::Vec4, 8>, 3>> triangles;
 };
 
 // Sprint 14 RasterJob — screen-space triangles in, per-pixel fragments out.
@@ -54,10 +59,10 @@ struct RasterFragment {
     int     x, y;
     uint8_t coverage_mask;     // 4-bit when msaa_4x, else 1-bit
     float   depth;
-    std::array<gpu::sim::Vec4, 4> varying;     // interpolated VS o1..o4
+    std::array<gpu::sim::Vec4, 8> varying;     // interpolated VS o1..o7
 };
 struct RasterJob {
-    std::vector<std::array<std::array<gpu::sim::Vec4, 4>, 3>> triangles;
+    std::vector<std::array<std::array<gpu::sim::Vec4, 8>, 3>> triangles;
     int  fb_w = 0, fb_h = 0;
     bool msaa_4x = false;
     int  varying_count = 0;

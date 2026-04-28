@@ -52,10 +52,10 @@ void PrimitiveAssemblyLt::b_transport(tlm::tlm_generic_payload& trans,
         return;
     }
 
-    auto emit = [&](const std::array<gpu::sim::Vec4, 4>& a,
-                    const std::array<gpu::sim::Vec4, 4>& b,
-                    const std::array<gpu::sim::Vec4, 4>& c) {
-        std::array<std::array<gpu::sim::Vec4, 4>, 3> tri;
+    auto emit = [&](const std::array<gpu::sim::Vec4, 8>& a,
+                    const std::array<gpu::sim::Vec4, 8>& b,
+                    const std::array<gpu::sim::Vec4, 8>& c) {
+        std::array<std::array<gpu::sim::Vec4, 8>, 3> tri;
         tri[0] = a; tri[1] = b; tri[2] = c;
         // Transform o0 (clip pos) only; varyings (o1..o3) are pass-through.
         tri[0][0] = perspective_divide_and_viewport(a[0], job->vp_x, job->vp_y,

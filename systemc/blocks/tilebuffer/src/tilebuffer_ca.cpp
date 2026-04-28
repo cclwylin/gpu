@@ -24,19 +24,14 @@ void TileBufferCa::thread() {
         job_ready_o.write(true);
         do { wait(); } while (!job_valid_i.read());
         const uint64_t job_word = job_data_i.read();
-        TileFlushJob* const job = reinterpret_cast<TileFlushJob*>(job_word);
         job_ready_o.write(false);
 
-        // Tile-dump cycle placeholder. The original "1 cycle / pixel"
-        // here was unrealistic for the example workload — it dominates
-        // wall-clock once tiles get ≥128² because every flush stalls
-        // the upstream chain for tens of thousands of cycles. Real TBF
-        // SRAM is multi-banked and overlaps with PFO writes; for now
-        // model a constant-time flush boundary so the chain can drain
-        // many quads per second of simulation.
-        if (job) {
-            for (int i = 0; i < 16; ++i) wait();   // ~16-cycle stamp
-        }
+        // Real TBF SRAM is multi-banked and overlaps with PFO writes —
+        // the flush boundary itself is effectively free. Charge zero
+        // cycles here; the upstream PFO already accounts for per-quad
+        // throughput. (Earlier this carried a 16-cycle placeholder
+        // stamp, which compounded with the per-quad flush rate to add
+        // ~16 × num_fragments cycles for no modeling benefit.)
 
         out_valid_o.write(true);
         out_data_o.write(job_word);

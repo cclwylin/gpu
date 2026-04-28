@@ -8,6 +8,7 @@
 
 #include <GL/gl.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -241,9 +242,271 @@ const ShaderPair& shader_pair() {
 
 }  // namespace
 
-// Accumulated triangle list captured for the optional .scene dump.
-namespace { struct SceneVert { Vec4 pos; Vec4 col; };
-            std::vector<SceneVert> g_scene_buf;
+// Captured scene as an ordered list of ops so mid-frame state changes
+// AND mid-frame fb mutations (glClear with a different clear-color,
+// scissor toggles, etc.) replay in the same order they happened. Two
+// op kinds today:
+//   * BATCH — pipeline draw with state snapshot + verts. Consecutive
+//     flushes with identical state and no intervening clear coalesce.
+//   * CLEAR — fill the whole fb with a packed RGBA8 colour (mirrors
+//     glcompat's current "scissor-ignored" glClear semantics; once
+//     glScissor lands here it'll grow x/y/w/h fields).
+namespace {
+// Sprint 61 — `vars[]` carries up to 7 vec4 varyings per vertex
+// (matching the runtime Vertex.varying[7] capacity). Pre-Sprint-61 the
+// scene format only had a single `col` slot, so multi-varying shaders
+// (the 1060-case `fragment_ops.blend.*` block) couldn't roundtrip
+// through the SC chain. `n_vars` records how many of the 7 slots the
+// VS actually wrote so the writer / SC replay only ship the active
+// varyings.
+struct SceneVert {
+    Vec4               pos;
+    std::array<Vec4,7> vars{};
+};
+struct SceneBatch {
+    bool        depth_test  = false;
+    bool        depth_write = true;
+    const char* depth_func  = "less";
+    bool        cull_back   = false;
+    bool        blend       = false;
+    bool        stencil_test = false;
+    const char* stencil_func = "always";
+    int         stencil_ref  = 0;
+    int         stencil_read_mask  = 0xFF;
+    int         stencil_write_mask = 0xFF;
+    const char* stencil_sfail  = "keep";
+    const char* stencil_dpfail = "keep";
+    const char* stencil_dppass = "keep";
+    // Sprint 61 — full blend state: separate RGB / alpha factors,
+    // equations, and the blend color. Sprint 60 only emitted the
+    // boolean enable, so the SC replay always blended with the default
+    // SRC_ALPHA / ONE_MINUS_SRC_ALPHA → 1060 fragment_ops.blend.* cases
+    // diverged from sw_ref. Strings match `apply_batch_state`'s map.
+    const char* blend_src_rgb   = "src_alpha";
+    const char* blend_dst_rgb   = "one_minus_src_alpha";
+    const char* blend_src_alpha = "src_alpha";
+    const char* blend_dst_alpha = "one_minus_src_alpha";
+    const char* blend_eq_rgb    = "add";
+    const char* blend_eq_alpha  = "add";
+    float       blend_color[4]  = {0.0f, 0.0f, 0.0f, 0.0f};
+    int                     vp_x = 0, vp_y = 0, vp_w = 0, vp_h = 0;  // Sprint 61
+    int                     n_vars = 1;       // Sprint 61 — active varying count (1..7)
+    std::vector<SceneVert>  verts;
+};
+struct SceneBitmap {
+    int      x = 0, y = 0, w = 0, h = 0;
+    uint32_t color = 0;          // packed AABBGGRR
+    std::vector<uint8_t> bits;   // raw glBitmap bytes (MSB-first, rows bottom-up, (w+7)/8 bytes per row)
+};
+struct SceneOp {
+    enum Kind { BATCH, CLEAR, BITMAP, CLEAR_DEPTH, CLEAR_STENCIL } kind = BATCH;
+    SceneBatch  batch;       // valid when kind == BATCH
+    uint32_t    clear_rgba = 0;   // valid when kind == CLEAR (AABBGGRR)
+    SceneBitmap bitmap;      // valid when kind == BITMAP
+    float       clear_depth = 1.0f;     // valid when kind == CLEAR_DEPTH
+    uint8_t     clear_stencil_val = 0;  // valid when kind == CLEAR_STENCIL
+    // Sprint 60 — per-CLEAR scissor box + color-mask lane. The replay
+    // applies `pix = (old & ~lane) | (rgba & lane)` per pixel inside
+    // the rect. `clear_rect_full = true` means whole-fb clear (the
+    // legacy behaviour); writers default to that and only flip when
+    // GL_SCISSOR_TEST is on or glColorMask isn't all-true. Old scene
+    // files (with the bare `clear_rect <rgba>` form) still parse — the
+    // extra fields default to whole-fb / 0xFFFFFFFF lane.
+    bool        clear_rect_full = true;
+    int         clear_x0 = 0, clear_y0 = 0, clear_x1 = 0, clear_y1 = 0;
+    uint32_t    clear_lane = 0xFFFFFFFFu;
+};
+std::vector<SceneOp> g_scene_ops;
+
+const char* depth_func_name(GLenum f) {
+    switch (f) {
+        case GL_NEVER:    return "never";
+        case GL_LESS:     return "less";
+        case GL_LEQUAL:   return "lequal";
+        case GL_EQUAL:    return "equal";
+        case GL_GEQUAL:   return "gequal";
+        case GL_GREATER:  return "greater";
+        case GL_NOTEQUAL: return "notequal";
+        case GL_ALWAYS:   return "always";
+        default:          return "less";
+    }
+}
+const char* stencil_func_name(GLenum f) {
+    switch (f) {
+        case GL_NEVER:    return "never";
+        case GL_LESS:     return "less";
+        case GL_LEQUAL:   return "lequal";
+        case GL_GREATER:  return "greater";
+        case GL_GEQUAL:   return "gequal";
+        case GL_EQUAL:    return "equal";
+        case GL_NOTEQUAL: return "notequal";
+        case GL_ALWAYS:   return "always";
+        default:          return "always";
+    }
+}
+const char* stencil_op_name(GLenum o) {
+    switch (o) {
+        case GL_KEEP:    return "keep";
+        case GL_ZERO:    return "zero";
+        case GL_REPLACE: return "replace";
+        case GL_INCR:    return "incr";
+        case GL_DECR:    return "decr";
+        case GL_INVERT:  return "invert";
+        default:         return "keep";
+    }
+}
+// Sprint 61 — BlendFactor / BlendEq → token, paired with the inverse
+// table in sc_pattern_runner.cpp::apply_batch_state. Stable strings so
+// captured scenes survive across format-rev bumps.
+const char* blend_factor_name(gpu::DrawState::BlendFactor f) {
+    using DF = gpu::DrawState;
+    switch (f) {
+        case DF::BF_ZERO:                     return "zero";
+        case DF::BF_ONE:                      return "one";
+        case DF::BF_SRC_COLOR:                return "src_color";
+        case DF::BF_ONE_MINUS_SRC_COLOR:      return "one_minus_src_color";
+        case DF::BF_DST_COLOR:                return "dst_color";
+        case DF::BF_ONE_MINUS_DST_COLOR:      return "one_minus_dst_color";
+        case DF::BF_SRC_ALPHA:                return "src_alpha";
+        case DF::BF_ONE_MINUS_SRC_ALPHA:      return "one_minus_src_alpha";
+        case DF::BF_DST_ALPHA:                return "dst_alpha";
+        case DF::BF_ONE_MINUS_DST_ALPHA:      return "one_minus_dst_alpha";
+        case DF::BF_CONSTANT_COLOR:           return "constant_color";
+        case DF::BF_ONE_MINUS_CONSTANT_COLOR: return "one_minus_constant_color";
+        case DF::BF_CONSTANT_ALPHA:           return "constant_alpha";
+        case DF::BF_ONE_MINUS_CONSTANT_ALPHA: return "one_minus_constant_alpha";
+        case DF::BF_SRC_ALPHA_SATURATE:       return "src_alpha_saturate";
+    }
+    return "src_alpha";
+}
+const char* blend_eq_name(gpu::DrawState::BlendEq e) {
+    switch (e) {
+        case gpu::DrawState::BE_ADD:              return "add";
+        case gpu::DrawState::BE_SUBTRACT:         return "subtract";
+        case gpu::DrawState::BE_REVERSE_SUBTRACT: return "reverse_subtract";
+    }
+    return "add";
+}
+SceneBatch& open_or_reuse_batch(const State& s) {
+    SceneBatch cur;
+    cur.depth_test  = s.depth_test;
+    cur.depth_write = s.depth_write;
+    cur.depth_func  = depth_func_name(s.depth_func);
+    cur.cull_back   = s.cull_face && s.cull_mode == GL_BACK;
+    cur.blend       = s.blend;
+    cur.stencil_test = s.stencil_test;
+    cur.stencil_func = stencil_func_name(s.stencil_func);
+    cur.stencil_ref  = s.stencil_ref;
+    cur.stencil_read_mask  = (int)(s.stencil_read_mask  & 0xFF);
+    cur.stencil_write_mask = (int)(s.stencil_write_mask & 0xFF);
+    cur.stencil_sfail  = stencil_op_name(s.stencil_sfail);
+    cur.stencil_dpfail = stencil_op_name(s.stencil_dpfail);
+    cur.stencil_dppass = stencil_op_name(s.stencil_dppass);
+    // Sprint 61 — capture full blend state from the live DrawState so
+    // the SC replay can reproduce arbitrary glBlendFuncSeparate /
+    // glBlendEquationSeparate / glBlendColor combinations.
+    cur.blend_src_rgb   = blend_factor_name(s.ctx.draw.blend_src_rgb);
+    cur.blend_dst_rgb   = blend_factor_name(s.ctx.draw.blend_dst_rgb);
+    cur.blend_src_alpha = blend_factor_name(s.ctx.draw.blend_src_alpha);
+    cur.blend_dst_alpha = blend_factor_name(s.ctx.draw.blend_dst_alpha);
+    cur.blend_eq_rgb    = blend_eq_name(s.ctx.draw.blend_eq_rgb);
+    cur.blend_eq_alpha  = blend_eq_name(s.ctx.draw.blend_eq_alpha);
+    for (int i = 0; i < 4; ++i)
+        cur.blend_color[i] = s.ctx.draw.blend_color[i];
+    cur.vp_x = s.vp_x; cur.vp_y = s.vp_y;
+    cur.vp_w = s.vp_w; cur.vp_h = s.vp_h;
+    if (!g_scene_ops.empty() && g_scene_ops.back().kind == SceneOp::BATCH) {
+        const SceneBatch& last = g_scene_ops.back().batch;
+        if (last.depth_test  == cur.depth_test  &&
+            last.depth_write == cur.depth_write &&
+            std::strcmp(last.depth_func, cur.depth_func) == 0 &&
+            last.cull_back   == cur.cull_back   &&
+            last.blend       == cur.blend       &&
+            std::strcmp(last.blend_src_rgb,   cur.blend_src_rgb)   == 0 &&
+            std::strcmp(last.blend_dst_rgb,   cur.blend_dst_rgb)   == 0 &&
+            std::strcmp(last.blend_src_alpha, cur.blend_src_alpha) == 0 &&
+            std::strcmp(last.blend_dst_alpha, cur.blend_dst_alpha) == 0 &&
+            std::strcmp(last.blend_eq_rgb,    cur.blend_eq_rgb)    == 0 &&
+            std::strcmp(last.blend_eq_alpha,  cur.blend_eq_alpha)  == 0 &&
+            last.blend_color[0] == cur.blend_color[0] &&
+            last.blend_color[1] == cur.blend_color[1] &&
+            last.blend_color[2] == cur.blend_color[2] &&
+            last.blend_color[3] == cur.blend_color[3] &&
+            last.vp_x == cur.vp_x && last.vp_y == cur.vp_y &&
+            last.vp_w == cur.vp_w && last.vp_h == cur.vp_h &&
+            last.stencil_test == cur.stencil_test &&
+            std::strcmp(last.stencil_func, cur.stencil_func) == 0 &&
+            last.stencil_ref == cur.stencil_ref &&
+            last.stencil_read_mask  == cur.stencil_read_mask  &&
+            last.stencil_write_mask == cur.stencil_write_mask &&
+            std::strcmp(last.stencil_sfail,  cur.stencil_sfail)  == 0 &&
+            std::strcmp(last.stencil_dpfail, cur.stencil_dpfail) == 0 &&
+            std::strcmp(last.stencil_dppass, cur.stencil_dppass) == 0) {
+            return g_scene_ops.back().batch;
+        }
+    }
+    SceneOp op;
+    op.kind  = SceneOp::BATCH;
+    op.batch = std::move(cur);
+    g_scene_ops.push_back(std::move(op));
+    return g_scene_ops.back().batch;
+}
+}  // namespace
+
+// Called from glClear(GL_COLOR_BUFFER_BIT) when scene capture is on.
+// Records a clear op so the SC chain can apply it in the same order
+// the live glcompat fb saw it (between mid-frame draw batches).
+//
+// Sprint 60 overload — also accepts the scissor rect that limited the
+// clear and the bitwise color-mask `lane`. Replayers apply
+// `pix = (old & ~lane) | (rgba & lane)` per pixel inside [x0,x1)×[y0,y1).
+// `full=true` means whole-fb clear (uses the legacy fast-path on the
+// SC side). The rgba8 still has the test's clear color *unmodified* —
+// the lane is what carries glColorMask. Without this, scissored /
+// masked color_clear cases were diverging from sw_ref by ~100 RMSE in
+// the SC sweep.
+void scene_record_clear(uint32_t rgba8) {
+    SceneOp op;
+    op.kind = SceneOp::CLEAR;
+    op.clear_rgba = rgba8;
+    g_scene_ops.push_back(std::move(op));
+}
+void scene_record_clear_rect(uint32_t rgba8, int x0, int y0, int x1, int y1,
+                             uint32_t lane, bool full) {
+    SceneOp op;
+    op.kind = SceneOp::CLEAR;
+    op.clear_rgba = rgba8;
+    op.clear_rect_full = full;
+    op.clear_x0 = x0; op.clear_y0 = y0;
+    op.clear_x1 = x1; op.clear_y1 = y1;
+    op.clear_lane = lane;
+    g_scene_ops.push_back(std::move(op));
+}
+
+// Called from glBitmap when it would otherwise just write to the live
+// fb directly. The bitmap path bypasses the pipeline (fixed-function
+// glRasterPos + glBitmap is a fb blit, not a draw call), so to keep
+// the SC chain's fb in sync we record the same blit as an ordered op.
+// Coords are FB-space lower-left (raster_pos minus xb/yb origin), the
+// way glBitmap already computes them in glcompat_state.cpp.
+void scene_record_bitmap(int x, int y, int w, int h,
+                         uint32_t color_rgba8,
+                         const uint8_t* bits, size_t byte_count) {
+    SceneOp op;
+    op.kind = SceneOp::BITMAP;
+    op.bitmap.x = x; op.bitmap.y = y;
+    op.bitmap.w = w; op.bitmap.h = h;
+    op.bitmap.color = color_rgba8;
+    op.bitmap.bits.assign(bits, bits + byte_count);
+    g_scene_ops.push_back(std::move(op));
+}
+void scene_record_clear_depth(float v) {
+    SceneOp op; op.kind = SceneOp::CLEAR_DEPTH; op.clear_depth = v;
+    g_scene_ops.push_back(std::move(op));
+}
+void scene_record_clear_stencil(uint8_t v) {
+    SceneOp op; op.kind = SceneOp::CLEAR_STENCIL; op.clear_stencil_val = v;
+    g_scene_ops.push_back(std::move(op));
 }
 
 void flush_immediate() {
@@ -368,7 +631,7 @@ void flush_immediate() {
                     cap[2] = ndc_z;
                     cap[3] = 1.0f;
                 }
-                g_scene_buf.push_back({cap, lv.color});
+                open_or_reuse_batch(s).verts.push_back({cap, lv.color});
             }
         }
     }
@@ -380,6 +643,8 @@ void flush_immediate() {
     s.ctx.shaders.vs_attr_count    = 2;
     s.ctx.shaders.vs_varying_count = 1;
     s.ctx.shaders.fs_varying_count = 1;
+    s.ctx.draw.vp_x = s.vp_x;
+    s.ctx.draw.vp_y = s.vp_y;
     s.ctx.draw.vp_w = s.vp_w;
     s.ctx.draw.vp_h = s.vp_h;
     s.ctx.draw.primitive = gpu::DrawState::TRIANGLES;
@@ -411,49 +676,136 @@ void save_framebuffer() {
     std::fprintf(stderr, "[glcompat] saved %dx%d → %s\n", W, H, path.c_str());
 }
 
+namespace {
+bool g_es2_capture = false;
+}  // namespace
+
+void set_es2_scene_capture(bool on) { g_es2_capture = on; }
+bool es2_scene_capture_enabled() {
+    return g_es2_capture || (std::getenv("GLCOMPAT_SCENE") != nullptr);
+}
+
+// Sprint 39 / Sprint 61: ES 2.0 batch capture. The runner has already
+// walked the VBOs + run the VS in software, so all we do here is open
+// (or reuse) a BATCH and append the (clip-space pos, varying[0..N-1])
+// tuples. `varyings` is laid out per-vertex × N where each slot is a
+// vec4. Sprint 61 — generalised from the single-varying form so the
+// 1060-case `fragment_ops.blend.*` block can roundtrip multi-varying
+// data through the SC chain replay.
+void scene_record_es2_batch(const std::vector<gpu::Vec4f>& clip_pos,
+                            const std::vector<std::array<gpu::Vec4f, 7>>& varyings,
+                            int n_vars) {
+    if (clip_pos.empty()) return;
+    if (n_vars < 1) n_vars = 1;
+    if (n_vars > 7) n_vars = 7;
+    auto& batch = open_or_reuse_batch(state());
+    if (batch.verts.empty())
+        batch.n_vars = n_vars;
+    else if (batch.n_vars < n_vars)
+        batch.n_vars = n_vars;       // extend to widest seen so far
+    const size_t n = std::min(clip_pos.size(), varyings.size());
+    batch.verts.reserve(batch.verts.size() + n);
+    for (size_t i = 0; i < n; ++i) {
+        SceneVert sv;
+        sv.pos[0] = clip_pos[i][0]; sv.pos[1] = clip_pos[i][1];
+        sv.pos[2] = clip_pos[i][2]; sv.pos[3] = clip_pos[i][3];
+        for (int k = 0; k < 7; ++k) {
+            sv.vars[k][0] = varyings[i][k][0];
+            sv.vars[k][1] = varyings[i][k][1];
+            sv.vars[k][2] = varyings[i][k][2];
+            sv.vars[k][3] = varyings[i][k][3];
+        }
+        batch.verts.push_back(sv);
+    }
+}
+
+namespace {
+void save_scene_impl(const char* path);
+}
+
+void save_scene_to(const std::string& path) {
+    save_scene_impl(path.c_str());
+}
+
 void save_scene() {
     const char* env = std::getenv("GLCOMPAT_SCENE");
     if (!env) return;
+    save_scene_impl(env);
+}
+
+// Sprint 59 — register an atexit hook the first time scene capture is
+// observed live, so non-GLUT clients (notably `deqp-gles2`) get the same
+// scene dump on exit that the GLUT path triggers in glutLeaveMainLoop.
+// The flag avoids piling up multiple atexit() registrations across a
+// long-running test suite.
+namespace {
+void atexit_save_scene() {
+    save_scene();
+}
+}  // namespace
+void install_scene_atexit_once() {
+    static bool installed = false;
+    if (installed) return;
+    if (!es2_scene_capture_enabled()) return;
+    std::atexit(atexit_save_scene);
+    installed = true;
+    std::fprintf(stderr, "[glcompat] scene atexit registered (GLCOMPAT_SCENE=%s)\n",
+                 std::getenv("GLCOMPAT_SCENE"));
+}
+
+namespace {
+void save_scene_impl(const char* env) {
     auto& s = state();
-    // Even a zero-triangle scene is meaningful: stereo.c clears the
-    // framebuffer twice with different colors and never draws — the
-    // captured `clear` field still reproduces the result on the SC
-    // side. Only bail if the framebuffer was never touched at all.
-    if (!s.ctx_inited && g_scene_buf.empty()) {
+    // Drop any trailing partial triangle inside each batch (glBegin
+    // can leave dangling vertices if the program is malformed) and
+    // collapse runs of clears that are immediately overwritten by
+    // another clear (only the last in a run mutates the fb anyway).
+    for (auto& op : g_scene_ops) {
+        if (op.kind == SceneOp::BATCH && op.batch.verts.size() % 3 != 0)
+            op.batch.verts.resize(op.batch.verts.size()
+                                  - (op.batch.verts.size() % 3));
+    }
+    {
+        std::vector<SceneOp> kept;
+        kept.reserve(g_scene_ops.size());
+        for (auto& op : g_scene_ops) {
+            if (op.kind == SceneOp::BATCH && op.batch.verts.empty()) continue;
+            // Sprint 60 — only collapse consecutive CLEAR ops when BOTH
+            // are full-fb / full-mask. A scissored or masked clear only
+            // covers part of the fb; the prior clear still matters for
+            // the area it doesn't touch. The pre-Sprint-60 collapse
+            // (which always merged) silently dropped the background
+            // clear in `color_clear.scissored_*` / `masked_*` and the
+            // SC replay rendered inside-scissor only on top of an
+            // empty (init-zero) fb.
+            const bool both_clears = (op.kind == SceneOp::CLEAR
+                                      && !kept.empty()
+                                      && kept.back().kind == SceneOp::CLEAR);
+            const bool full_pair = both_clears
+                && op.clear_rect_full && op.clear_lane == 0xFFFFFFFFu
+                && kept.back().clear_rect_full
+                && kept.back().clear_lane == 0xFFFFFFFFu;
+            if (full_pair) {
+                kept.back().clear_rgba = op.clear_rgba;
+                continue;
+            }
+            kept.push_back(std::move(op));
+        }
+        g_scene_ops.swap(kept);
+    }
+    if (!s.ctx_inited && g_scene_ops.empty()) {
         std::fprintf(stderr, "[glcompat] no draw activity for scene\n");
         return;
-    }
-    if (g_scene_buf.size() % 3 != 0) {
-        g_scene_buf.resize(g_scene_buf.size() - (g_scene_buf.size() % 3));
     }
     std::ofstream f(env);
     if (!f) return;
     const int W = s.ctx.fb.width, H = s.ctx.fb.height;
-    f << "# generated by glcompat (Sprint 39)\n";
+    f << "# generated by glcompat (Sprint 41 — ordered ops)\n";
     f << "width  " << W << "\n";
     f << "height " << H << "\n";
     f << "msaa   " << (s.ctx.fb.msaa_4x ? 1 : 0) << "\n";
-    // Render-state capture so scene_runner / sc_pattern_runner can
-    // reproduce glcompat's exact framebuffer (closes the cube /
-    // dinoshade / etc. RMSE gap from "no depth test on the SC side").
-    f << "depth_test  " << (s.depth_test ? 1 : 0) << "\n";
-    f << "depth_write " << (s.depth_write ? 1 : 0) << "\n";
-    auto df = [&]() {
-        switch (s.depth_func) {
-            case GL_NEVER:    return "never";
-            case GL_LESS:     return "less";
-            case GL_LEQUAL:   return "lequal";
-            case GL_EQUAL:    return "equal";
-            case GL_GEQUAL:   return "gequal";
-            case GL_GREATER:  return "greater";
-            case GL_NOTEQUAL: return "notequal";
-            case GL_ALWAYS:   return "always";
-            default:          return "less";
-        }
-    };
-    f << "depth_func  " << df() << "\n";
-    f << "cull_back   " << (s.cull_face && s.cull_mode == GL_BACK ? 1 : 0) << "\n";
-    f << "blend       " << (s.blend ? 1 : 0) << "\n";
+    // Initial fb clear colour. Use the FIRST op's clear if it's a
+    // clear, else the live final clear_color (legacy fallback).
     auto to_u8 = [](float v) {
         if (v <= 0.0f) return 0u;
         if (v >= 1.0f) return 255u;
@@ -465,17 +817,118 @@ void save_scene() {
     char buf[32]; std::snprintf(buf, sizeof(buf),
         "%02x%02x%02x%02x", ca, cb, cg, cr);
     f << "clear  " << buf << "\n";
-    f << "verts\n";
-    for (const auto& v : g_scene_buf) {
-        f << " " << v.pos[0] << " " << v.pos[1]
-          << " " << v.pos[2] << " " << v.pos[3]
-          << "  " << v.col[0] << " " << v.col[1]
-          << " "  << v.col[2] << " " << v.col[3] << "\n";
+    size_t total_tris = 0, n_batches = 0, n_clears = 0, n_bitmaps = 0;
+    for (const auto& op : g_scene_ops) {
+        if (op.kind == SceneOp::CLEAR) {
+            char cbuf[32]; std::snprintf(cbuf, sizeof(cbuf), "%08x", op.clear_rgba);
+            // Sprint 60 — emit the extended form whenever the clear was
+            // actually scoped (scissor on or non-trivial color mask) so
+            // the SC replay can reproduce sw_ref's behaviour. The bare
+            // form stays available for whole-fb / full-mask clears so
+            // older tooling + scenes still parse.
+            if (op.clear_rect_full && op.clear_lane == 0xFFFFFFFFu) {
+                f << "clear_rect " << cbuf << "\n";
+            } else {
+                char lbuf[16]; std::snprintf(lbuf, sizeof(lbuf), "%08x", op.clear_lane);
+                f << "clear_rect " << cbuf << " "
+                  << op.clear_x0 << " " << op.clear_y0 << " "
+                  << op.clear_x1 << " " << op.clear_y1 << " " << lbuf << "\n";
+            }
+            ++n_clears;
+            continue;
+        }
+        if (op.kind == SceneOp::CLEAR_DEPTH) {
+            f << "clear_depth " << op.clear_depth << "\n";
+            continue;
+        }
+        if (op.kind == SceneOp::CLEAR_STENCIL) {
+            f << "clear_stencil " << (int)op.clear_stencil_val << "\n";
+            continue;
+        }
+        if (op.kind == SceneOp::BITMAP) {
+            const auto& bm = op.bitmap;
+            char cbuf[32]; std::snprintf(cbuf, sizeof(cbuf), "%08x", bm.color);
+            f << "bitmap " << bm.x << " " << bm.y << " "
+              << bm.w << " " << bm.h << " " << cbuf << " ";
+            for (uint8_t byte : bm.bits) {
+                char hbuf[4]; std::snprintf(hbuf, sizeof(hbuf), "%02x", byte);
+                f << hbuf;
+            }
+            f << "\n";
+            ++n_bitmaps;
+            continue;
+        }
+        const auto& b = op.batch;
+        f << "batch\n";
+        f << "  depth_test  " << (b.depth_test  ? 1 : 0) << "\n";
+        f << "  depth_write " << (b.depth_write ? 1 : 0) << "\n";
+        f << "  depth_func  " << b.depth_func << "\n";
+        f << "  cull_back   " << (b.cull_back   ? 1 : 0) << "\n";
+        f << "  blend       " << (b.blend       ? 1 : 0) << "\n";
+        // Sprint 61 — emit full blend state so the SC replay reproduces
+        // glBlendFuncSeparate / glBlendEquationSeparate / glBlendColor.
+        // Skip the lines when blend is off and everything is at default
+        // to keep diff churn minimal on legacy scenes.
+        const bool blend_default =
+            std::strcmp(b.blend_src_rgb,   "src_alpha")           == 0 &&
+            std::strcmp(b.blend_dst_rgb,   "one_minus_src_alpha") == 0 &&
+            std::strcmp(b.blend_src_alpha, "src_alpha")           == 0 &&
+            std::strcmp(b.blend_dst_alpha, "one_minus_src_alpha") == 0 &&
+            std::strcmp(b.blend_eq_rgb,    "add")                 == 0 &&
+            std::strcmp(b.blend_eq_alpha,  "add")                 == 0;
+        // Sprint 61 — per-batch viewport so the SC chain renders into
+        // the same sub-rect as sw_ref (and the E2E driver knows where
+        // to crop the SC PPM for diff). Default is whole-fb; emit only
+        // when the test set a non-default viewport.
+        if (b.vp_w > 0 && (b.vp_x != 0 || b.vp_y != 0 ||
+                            b.vp_w != W || b.vp_h != H)) {
+            f << "  viewport " << b.vp_x << " " << b.vp_y
+              << " " << b.vp_w << " " << b.vp_h << "\n";
+        }
+        if (b.blend || !blend_default) {
+            f << "  blend_func " << b.blend_src_rgb << " " << b.blend_dst_rgb
+              << " " << b.blend_src_alpha << " " << b.blend_dst_alpha << "\n";
+            f << "  blend_eq " << b.blend_eq_rgb << " " << b.blend_eq_alpha << "\n";
+            if (b.blend_color[0] != 0.0f || b.blend_color[1] != 0.0f ||
+                b.blend_color[2] != 0.0f || b.blend_color[3] != 0.0f) {
+                f << "  blend_color "
+                  << b.blend_color[0] << " " << b.blend_color[1] << " "
+                  << b.blend_color[2] << " " << b.blend_color[3] << "\n";
+            }
+        }
+        if (b.stencil_test) {
+            f << "  stencil_test 1\n";
+            f << "  stencil_func " << b.stencil_func << " " << b.stencil_ref
+              << " " << b.stencil_read_mask << "\n";
+            f << "  stencil_op " << b.stencil_sfail << " "
+              << b.stencil_dpfail << " " << b.stencil_dppass << "\n";
+            f << "  stencil_write_mask " << b.stencil_write_mask << "\n";
+        }
+        // Sprint 61 — emit `varying_count N` (default 1 stays implicit
+        // for back-compat with older scenes / runners that only know
+        // the single-varying form). Per vertex: 4 (pos) + 4·N (varying)
+        // floats. The legacy 4+4 layout is exactly the N=1 case.
+        const int n_vars = std::max(1, std::min(7, b.n_vars));
+        if (n_vars != 1) f << "  varying_count " << n_vars << "\n";
+        f << "  verts\n";
+        for (const auto& v : b.verts) {
+            f << "  " << v.pos[0] << " " << v.pos[1]
+              << " "  << v.pos[2] << " " << v.pos[3];
+            for (int k = 0; k < n_vars; ++k) {
+                f << "  " << v.vars[k][0] << " " << v.vars[k][1]
+                  << " "  << v.vars[k][2] << " " << v.vars[k][3];
+            }
+            f << "\n";
+        }
+        f << "  end\n";
+        f << "end_batch\n";
+        total_tris += b.verts.size() / 3;
+        ++n_batches;
     }
-    f << "end\n";
     std::fprintf(stderr,
-        "[glcompat] scene → %s (%zu triangles)\n",
-        env, g_scene_buf.size() / 3);
+        "[glcompat] scene → %s (%zu triangles in %zu batches, %zu clears, %zu bitmaps)\n",
+        env, total_tris, n_batches, n_clears, n_bitmaps);
 }
+}  // namespace (save_scene_impl)
 
 }  // namespace glcompat
