@@ -50,6 +50,68 @@ fully closed end-to-end. `fragment_ops` 61/1887 bit-perfect with 1014 cases
 rendering but RMSE > 0; the remaining 812 timed out at the 15-second SC-chain
 budget. `buffer.write.*` random vertex sets dominate the timeout column.
 
+### `fragment_ops.*` 1887-case breakdown
+
+The bulk of the SC parity work sits inside `fragment_ops` — drilling one
+level deeper separates "rendered with diff" (real SC chain bug) from
+"timed out" (just slow on the M4):
+
+| 2nd-level subgroup       | total | bp  | diff | timeout | mean RMSE |
+|---|---:|---:|---:|---:|---:|
+| `blend.*`                | 1060  | **54** | 1006 |   0     | 58.91 |
+| `depth_stencil.*`        |  621  |   0    |    0 | **621** | —     |
+| `random.*`               |  100  |   0    |    0 | **100** | —     |
+| `interaction.basic_shader.*` | 64 |   0    |    0 | **64**  | —     |
+| `stencil.*`              |   17  |   0    |    0 | **17**  | —     |
+| `scissor.*`              |   17  | **7**  |    8 |   2     | 94.76 |
+| `depth.*`                |    8  |   0    |    0 | **8**   | —     |
+
+Two stories overlap:
+
+**(A) 812 / 1887 cases are pure timeout** — the entire `depth_stencil`,
+`random`, `interaction`, `stencil`, and `depth` subgroups exceed the
+15-second SC-chain budget on the M4 mini. They render correctly on
+sw_ref and `sc_pattern_runner` is just slow; lifting `--sc-timeout` to
+30 s should unlock most of this column without code changes.
+
+`depth_stencil.*` 621 splits as `stencil_ops` 512 + `stencil_depth_funcs`
+81 + `random` 25 + `write_mask` 3 — all timeout.
+
+**(B) 1006 / 1887 cases render with non-zero RMSE** — concentrated in
+`blend`. Drilling one more level:
+
+| `blend.<3rd>`                       | total | bp | diff | RMSE range  |
+|---|---:|---:|---:|---|
+| `equation_src_func_dst_func`        |  630  | 54 | 576  | 0.5–82.7    |
+| `rgb_func_alpha_func`               |  421  |  0 | 421  | **59.9–170.0** |
+| `rgb_equation_alpha_equation`       |    9  |  0 |   9  | 3.3–42.3    |
+
+`equation_src_func_dst_func` (single factor + equation pair applied to
+RGB and alpha alike) already produces 54 bit-perfect cases — the SC
+chain handles the simple-blend path. `rgb_func_alpha_func` (separate
+RGB factor vs separate alpha factor) is **0 bp / 421 RMSE 60–170** —
+strong signal that the SC chain's PFO block still uses one factor pair
+for both RGB and alpha. Sprint 61's multi-blend scene-format extension
+landed in `glcompat`'s capture side but the corresponding lane in
+`sc_to_pa_adapter_ca` / `perfragmentops_lt` hasn't been wired through.
+This is the highest-leverage SC chain fix on deck.
+
+`scissor.*` is already nearly there: 7 bit-perfect (lines / points /
+`clear_color`), 8 RMSE-diff (triangle cases — sub-pixel rasterizer
+jitter between sw_ref and SC chain), 2 timeout (visualization phase).
+
+ROI ranking for the next SC sprint:
+
+1. **`--sc-timeout 30s` rerun** — expected +800 cases out of the
+   timeout pile, no code change.
+2. **Wire separate-RGB/alpha blend factors into the SC chain** —
+   `sc_to_pa_adapter_ca` + `perfragmentops_lt`. Expected to drag the
+   421 `rgb_func_alpha_func` cases from RMSE 60–170 down to < 5
+   (matching the bit-perfect equation column).
+3. **Mine the bottom 50 of `equation_src_func_dst_func` 576 RMSE>0** —
+   those clustered close to bit-perfect already; usually one ULP-class
+   fix unlocks an entire band.
+
 ## 49 GL example regress (`tools/regress_examples.py`)
 
 `sw_ref` is the ground-truth render; `SC paint` is the cycle-accurate chain
