@@ -1,9 +1,9 @@
 ---
 block: VF
 name: Vertex Fetch
-version: 0.1 (draft)
+version: 1.0 (frozen)
 owner: E1
-last_updated: 2026-04-25
+last_updated: 2026-04-26
 ---
 
 # VF — Vertex Fetch Microarchitecture
@@ -16,6 +16,12 @@ last_updated: 2026-04-25
 3. 做 format conversion(int / fixed / float / normalized)
 4. 用 post-transform vertex cache 避開重複 VS 執行
 5. 批次輸出 vertex 給 SC(VS input queue)
+
+## Implementation Status
+
+- **Phase-1 LT** — `VertexFetchLt` in [`systemc/blocks/vertexfetch/`](../../systemc/blocks/vertexfetch/). Sprint 10. Per-vertex `ShaderJob` fan-out via SC; format conversion, PT cache, MMU index-fetch are Phase 2.x.
+- **Phase-2 CA** — `VertexFetchCa` (Sprint 19). Default `vertices_per_cmd = 3`; pass-through pointer downstream.
+- **Out of scope for v1**: real index buffer + DRAM fetch, post-transform vertex cache, instancing.
 
 ## Block Diagram
 
@@ -124,6 +130,6 @@ FETCH_LOOP ─ all indices done ─► DONE ─► IDLE
 
 ## Open Questions
 
-- [ ] PT cache size 32 是否夠(workload 分析)
-- [ ] float16 attribute 是否 v1 支援
-- [ ] Instance count support(ES 2.0 沒有,v1 不做)
+- [ ] PT cache size 32 是否夠(workload 分析) — Phase 2.x; current LT/CA models bypass the cache.
+- [x] float16 attribute — **deferred** out of v1 (ES 2.0 has no half-float vertex format).
+- [x] Instance count support — **out of v1** (ES 2.0 lacks instancing; revisit if/when ES 3.0 / Vulkan target).

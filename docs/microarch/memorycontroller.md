@@ -1,9 +1,9 @@
 ---
 block: MC
 name: Memory Controller
-version: 0.1 (draft)
+version: 1.0 (frozen)
 owner: E1
-last_updated: 2026-04-25
+last_updated: 2026-04-26
 ---
 
 # MC — Memory Controller Microarchitecture
@@ -11,6 +11,12 @@ last_updated: 2026-04-25
 ## Purpose
 
 AXI4 master,request scheduling,QoS,兩條獨立 port 分離 texture / framebuffer 流量。
+
+## Implementation Status
+
+- **Phase-1 LT** — `MemoryControllerLt` in [`systemc/blocks/memorycontroller/`](../../systemc/blocks/memorycontroller/) (Sprint 34). Owns a backing `std::vector<uint8_t>` "DRAM" (default 64 KiB, ctor-configurable). Per `MemRequest`: read copies bytes into `req->data`; write copies `req->data` into DRAM. Fault-flagged requests are no-ops. 12 ns bank-latency stamp.
+- **Phase-2 CA** — `MemoryControllerCa` (Sprint 27). Same backing-vector model + 12-cyc stamp.
+- **Out of scope for v1**: AXI4 protocol, dual-port (tex / fb separation), bank model with row buffers / refresh, multi-port arbitration, write-combining.
 
 ## Block Diagram
 
@@ -95,7 +101,7 @@ Weights by CSR.
 
 ## Open Questions
 
-- [ ] 單 port 128-bit 是否足夠:peak BW 16 GB/s per port @ 1 GHz;FPGA 500 MHz → 8 GB/s
-- [ ] DDR generation target(DDR4 vs LPDDR4):依 ASIC / FPGA 環境
-- [ ] Write-combining buffer(coalesce 小寫)是否納 MC 還是 upstream
-- [ ] AXI OO policy:保守(in-order)先做,後期放寬
+- [ ] 單 port 128-bit 是否足夠 — Phase 2.x; current model has no port concept.
+- [ ] DDR generation target — Phase 2.x; depends on FPGA/ASIC target choice.
+- [x] Write-combining buffer:**at MC** if added (RSV / TB write paths benefit most).
+- [x] AXI OO policy:**in-order** first (matches today's strictly-sequential `MemRequest` flow).

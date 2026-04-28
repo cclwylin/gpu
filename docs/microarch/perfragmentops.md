@@ -1,9 +1,9 @@
 ---
 block: PFO
 name: Per-Fragment Ops
-version: 0.1 (draft)
+version: 1.0 (frozen)
 owner: E2
-last_updated: 2026-04-25
+last_updated: 2026-04-26
 ---
 
 # PFO — Per-Fragment Ops Microarchitecture
@@ -16,6 +16,13 @@ FS 輸出 color 後的 per-sample 操作:
 3. Per-sample stencil test
 4. Per-sample blend
 5. Write to TBF
+
+## Implementation Status
+
+- **Phase-1 LT** — `PerFragmentOpsLt` in [`systemc/blocks/perfragmentops/`](../../systemc/blocks/perfragmentops/) (Sprint 34). Wraps `gpu::pipeline::per_fragment_ops`.
+- **Phase-2 CA** — `PerFragmentOpsCa` (Sprint 25). 4 cyc/quad placeholder.
+- **sw_ref** — `gpu::pipeline::per_fragment_ops` covers depth + alpha blend (Sprint 8) and stencil + scissor + alpha-to-coverage (Sprint 17). Both 1× and 4× MSAA paths implemented.
+- **Out of scope for v1**: 5-stage early-Z / late-Z pipeline timing, hi-Z block, blend pipe forwarding hazards, two-sided stencil, polygon offset, depth-bounds, `glColorMask`.
 
 ## Block Diagram
 
@@ -124,7 +131,7 @@ Hardware:
 
 ## Open Questions
 
-- [ ] Blend intermediate precision:0.16 vs 8.8 fix
-- [ ] PFO 與 early-Z 重複邏輯是否共享硬體
-- [ ] Stencil back-face 獨立 state(ES 2.0 沒有,v1 不做)
-- [ ] Logic op(glLogicOp):ES 2.0 沒有,v1 不做
+- [ ] Blend intermediate precision:0.16 vs 8.8 fix — Phase 2.x; sw_ref currently uses float internally.
+- [ ] PFO 與 early-Z 重複邏輯是否共享硬體 — Phase 2.x; sw_ref does late-Z only.
+- [x] Stencil back-face 獨立 state:**out of v1** (ES 2.0 没有 two-sided stencil).
+- [x] Logic op(glLogicOp):**out of v1** (not in ES 2.0).

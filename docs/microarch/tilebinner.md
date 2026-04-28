@@ -1,9 +1,9 @@
 ---
 block: TB
 name: Tile Binner
-version: 0.1 (draft)
+version: 1.0 (frozen)
 owner: E2
-last_updated: 2026-04-25
+last_updated: 2026-04-26
 ---
 
 # TB — Tile Binner Microarchitecture
@@ -12,6 +12,12 @@ last_updated: 2026-04-25
 
 TBDR 的核心:triangle 分到 tile bucket。每個 tile 在 DRAM 維護
 primitive list,所有 draw 累積完成後進 render phase。
+
+## Implementation Status
+
+- **Phase-1 LT** — *not built*. The current LT chain rasterises directly without binning (single full-frame pass, no DRAM-resident bin lists). This is acceptable while the conformance set stays at ≤32×32 framebuffers.
+- **Phase-2 CA** — `TileBinnerCa` in [`systemc/blocks/tilebinner/`](../../systemc/blocks/tilebinner/) (Sprint 28). Bbox → tile-grid hit increments into `bin_counts[grid_w * grid_h]`; 1 cyc / tile-update placeholder. No DRAM I/O; descriptor format below is target spec, not implemented.
+- **Out of scope for v1**: real DRAM-resident bin lists, overflow handling, multi-render-pass scheduler.
 
 ## Block Diagram
 
@@ -105,7 +111,7 @@ End-of-frame 由 CP 的 `WAIT_IDLE` 或 swap 觸發。
 
 ## Open Questions
 
-- [ ] Descriptor 內容:存 edge eq 還是 vertex ptr
-- [ ] Bin buffer 預設 size:per-tile quota 多少(pixel count 估)
-- [ ] Overflow 策略:multi-pass render 或 on-demand enlarge
-- [ ] Multiple-render-pass scheduler 的複雜度
+- [x] Descriptor 內容:**vertex pointer + state** (RS reruns edge setup — keeps descriptor small).
+- [ ] Bin buffer 預設 size:per-tile quota — Phase 2.x; current CA model never spills.
+- [ ] Overflow 策略:multi-pass render 或 on-demand enlarge — Phase 2.x.
+- [ ] Multiple-render-pass scheduler — Phase 2.x; CA bin-counts are per-frame only.

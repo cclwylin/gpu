@@ -1,9 +1,9 @@
 ---
 block: L2
 name: L2 Unified Cache
-version: 0.1 (draft)
+version: 1.0 (frozen)
 owner: E1
-last_updated: 2026-04-25
+last_updated: 2026-04-26
 ---
 
 # L2 — Unified Cache Microarchitecture
@@ -12,6 +12,12 @@ last_updated: 2026-04-25
 
 共享 cache,上游接 L1 Tex$ miss / MMU PTE fetch / CP ring fetch / TB list,
 下游 AXI via MC。Coalesce small requests。
+
+## Implementation Status
+
+- **Phase-1 LT** — `L2CacheLt` in [`systemc/blocks/l2cache/`](../../systemc/blocks/l2cache/) (Sprint 34). Pure pass-through with a 4 ns hit-latency stamp; no actual caching.
+- **Phase-2 CA** — `L2CacheCa` (Sprint 27). Same pass-through + 4-cyc stamp.
+- **Out of scope for v1**: real tag/data SRAM, MSHRs, write-back policy, banking, BIST.
 
 ## Block Diagram
 
@@ -98,7 +104,7 @@ last_updated: 2026-04-25
 
 ## Open Questions
 
-- [ ] Write-through vs write-back(TBF bypass 已經省寫回,但 TB list / CP ring 可能 benefit from WB)
-- [ ] Size 256 vs 512 KB
-- [ ] MSHR 數(8 vs 16)
-- [ ] Banking:若 frequency 不收斂,後期 bank 化
+- [x] Write policy:**write-through** for v1 (simpler; TBF / RSV bypass covers the heavy write traffic anyway).
+- [ ] Size 256 vs 512 KB — Phase 2.x; bench-driven once real DRAM model lands.
+- [x] MSHR 數:**8** for v1 (matches initial outstanding-miss budget).
+- [ ] Banking — Phase 2.x; only relevant once timing closure starts.

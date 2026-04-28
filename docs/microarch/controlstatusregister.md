@@ -1,9 +1,9 @@
 ---
 block: CSR
 name: Configuration Register Block (APB slave)
-version: 0.1 (draft)
+version: 1.0 (frozen)
 owner: E3
-last_updated: 2026-04-25
+last_updated: 2026-04-26
 ---
 
 # CSR — Register Block Microarchitecture
@@ -11,6 +11,12 @@ last_updated: 2026-04-25
 ## Purpose
 
 APB slave。Driver 透過 APB 讀寫 register,fanout config 給各 block。
+
+## Implementation Status
+
+- **Phase-1 LT** — `ControlStatusRegisterLt` in [`systemc/blocks/controlstatusregister/`](../../systemc/blocks/controlstatusregister/) (Sprint 34). 16 × 32-bit chip-internal register file; per `CsrJob`: read or write `regs_[reg_idx]`. The host-side bus protocol (APB / AHB) is **out of v1** — only the chip-internal handshake is modelled.
+- **Phase-2 CA** — `ControlStatusRegisterCa` (Sprint 28). Same 16-reg file + 1-cyc access stamp.
+- **regmap-gen** — Phase 0 already lands `tools/regmap_gen/` consuming `specs/registers.yaml`.
 
 ## Source of Truth
 
@@ -86,6 +92,6 @@ Hand-coded cases(非 generated):
 
 ## Open Questions
 
-- [ ] Debug interface(JTAG)是否 v1 必備
-- [ ] Register widening(64-bit)for certain counters
-- [ ] Sparse addr vs dense(目前稀疏,decode 表較小)
+- [x] Debug interface(JTAG):**out of v1**.
+- [x] Register widening(64-bit counters):**deferred** — 32-bit suffices for v1. PMU cycle counter wraps after ~4.3 s @ 1 GHz, acceptable for current tests.
+- [x] Sparse addr vs dense:**sparse** (decode table small).

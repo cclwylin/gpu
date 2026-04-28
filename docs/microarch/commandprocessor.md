@@ -1,9 +1,9 @@
 ---
 block: CP
 name: Command Processor
-version: 0.1 (draft)
+version: 1.0 (frozen)
 owner: E1
-last_updated: 2026-04-25
+last_updated: 2026-04-26
 ---
 
 # CP — Command Processor Microarchitecture
@@ -12,6 +12,12 @@ last_updated: 2026-04-25
 
 Parse driver-produced command ring buffer,維護 HW state,dispatch
 draw / state-update / sync command 到下游 block。所有 HW 活動的起點。
+
+## Implementation Status
+
+- **Phase-1 LT** — `CommandProcessorLt` in [`systemc/blocks/commandprocessor/`](../../systemc/blocks/commandprocessor/). Shipped Sprint 5; Sprint 34 added multi-stage dispatch (`Stage::{VF,PA,RS,TMU,PFO}` + 5 initiator sockets + `enqueue(Stage,void*)` overload).
+- **Phase-2 CA** — `CommandProcessorCa` (Sprint 18). `SC_CTHREAD` on `clk.pos()` + ready/valid + 64-bit data; same `enqueue()` driver-side API as LT.
+- **Out of scope for v1**: ring-buffer fetch, prefetch FIFO, full scoreboard. The current LT model accepts a queued opaque `void*` and routes by `Stage` tag — the FSM described below maps to the Phase 2.x cycle-accurate buildout.
 
 ## Block Diagram
 
@@ -123,6 +129,7 @@ Draw 必須等 scoreboard 許可才能 dispatch,防止 state aliasing。
 
 ## Open Questions
 
-- [ ] Prefetch depth:4 是否夠(workload-dependent)
-- [ ] Scoreboard 精度:per-register bank 或更粗
-- [ ] Bulk SET_REG 對 APB throughput 影響
+- [x] **Multi-stage dispatch** — Sprint 34 lands `Stage` enum + 5 initiator sockets in CP_lt; chip-level `gpu_top` binds them to PA / RS / TMU / PFO targets. Real ring-fetch + decoder is Phase 2.x.
+- [ ] Prefetch depth:4 是否夠(workload-dependent) — Phase 2.x; deferred until ring-buffer fetch lands.
+- [ ] Scoreboard 精度:per-register bank 或更粗 — Phase 2.x.
+- [ ] Bulk SET_REG 對 APB throughput 影響 — deferred (no current workload exercises it).

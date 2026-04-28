@@ -1,9 +1,9 @@
 ---
 block: MMU
 name: Memory Management Unit
-version: 0.1 (draft)
+version: 1.0 (frozen)
 owner: E1
-last_updated: 2026-04-25
+last_updated: 2026-04-26
 ---
 
 # MMU — Memory Management Unit Microarchitecture
@@ -11,6 +11,12 @@ last_updated: 2026-04-25
 ## Purpose
 
 Virtual → physical translation,driver-managed page table,多 client 共享。
+
+## Implementation Status
+
+- **Phase-1 LT** — `MemoryManagementUnitLt` in [`systemc/blocks/memorymanagementunit/`](../../systemc/blocks/memorymanagementunit/) (Sprint 34). Identity-map placeholder; enforces a `va_limit` (default 1 GiB) → out-of-range → `req->fault = true` and forwards (downstream blocks honour the flag).
+- **Phase-2 CA** — `MemoryManagementUnitCa` (Sprint 27). Same identity-map model + 1-cycle translation stamp.
+- **Out of scope for v1**: real 2-level PT walker, L1/L2 TLB, large pages, per-ASID tagging, multi-walker parallelism.
 
 ## Block Diagram
 
@@ -135,6 +141,6 @@ Default round-robin。Phase 2 驗證是否需加權(e.g. VF 慢了整條 pipelin
 
 ## Open Questions
 
-- [ ] Multiple walker(parallel miss handling)— v1 暫時 1
-- [ ] Large page(2 MB)支援:v1 不做
-- [ ] Per-ASID TLB tagging:v1 不做(single context)
+- [x] Multiple walker:**single walker** for v1 (sufficient for the identity-map placeholder).
+- [x] Large page (2 MB):**out of v1**.
+- [x] Per-ASID TLB tagging:**out of v1** (single context).

@@ -1,9 +1,9 @@
 ---
 block: TMU
 name: Texture Unit
-version: 0.1 (draft)
+version: 1.0 (frozen)
 owner: E2
-last_updated: 2026-04-25
+last_updated: 2026-04-26
 ---
 
 # TMU — Texture Unit Microarchitecture
@@ -12,6 +12,13 @@ last_updated: 2026-04-25
 
 對 SC 發出的 texture 請求:address gen、L1 Tex$ lookup、format decode、filter,
 回填 filtered texel。
+
+## Implementation Status
+
+- **Phase-1 LT** — `TextureUnitLt` in [`systemc/blocks/textureunit/`](../../systemc/blocks/textureunit/) (Sprint 34). Wraps `gpu::sample_texture`; per-request fill of `samples[i]`.
+- **Phase-2 CA** — `TextureUnitCa` (Sprint 24). 1 cyc/request placeholder.
+- **sw_ref** — `gpu::sample_texture` in `sw_ref/src/texture/` (Sprint 4). RGBA8 only; NEAREST + BILINEAR; CLAMP + REPEAT.
+- **Out of scope for v1**: L1 Tex$ tag-check pipeline, mipmap LOD selection, RGB565 / ETC1 decoders, MIRRORED_REPEAT, anisotropic filter.
 
 ## Block Diagram
 
@@ -136,7 +143,7 @@ Per-channel,8-bit fix / 8-bit fix → 16-bit intermediate → 8-bit。
 
 ## Open Questions
 
-- [ ] L1 size:8 KB 是否夠(hit-ratio sim)
-- [ ] Trilinear:dedicated path 或 2× bilinear(throughput trade-off)
-- [ ] Aniso filter:ES 2.0 非必要,v1 不做
-- [ ] ETC1 實作 inside L1 還是 decode 後才入 cache
+- [ ] L1 size:8 KB 是否夠(hit-ratio sim) — Phase 2.x; current LT/CA bypass the cache.
+- [ ] Trilinear:dedicated path 或 2× bilinear — Phase 2.x.
+- [x] Aniso filter:**out of v1** (ES 2.0 非必要).
+- [ ] ETC1 實作 inside L1 還是 decode 後才入 cache — Phase 2.x; only RGBA8 supported today.

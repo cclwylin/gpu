@@ -1,9 +1,9 @@
 ---
 block: PA
 name: Primitive Assembly
-version: 0.1 (draft)
+version: 1.0 (frozen)
 owner: E1
-last_updated: 2026-04-25
+last_updated: 2026-04-26
 ---
 
 # PA — Primitive Assembly Microarchitecture
@@ -17,6 +17,12 @@ last_updated: 2026-04-25
 4. Back-face culling
 5. Triangle assembly(strip / fan / list 展開為獨立 triangle)
 6. Output triangle 給 TB
+
+## Implementation Status
+
+- **Phase-1 LT** — `PrimitiveAssemblyLt` in [`systemc/blocks/primitiveassembly/`](../../systemc/blocks/primitiveassembly/). Sprint 10. PerspDiv + viewport + back-face cull. **TRIANGLES mode only**; clipping (near/far) + STRIP/FAN deferred.
+- **Phase-2 CA** — `PrimitiveAssemblyCa` (Sprint 21). 2 cyc/triangle placeholder.
+- **sw_ref** — equivalent path inline in `gpu::pipeline` (used by `tests/conformance/scene_runner`).
 
 ## Block Diagram
 
@@ -122,6 +128,7 @@ Points / lines 的 expansion 位置(PA 或 RS)Phase 0 決定。建議 **PA**。
 
 ## Open Questions
 
-- [ ] Points / lines expansion 位置(PA vs RS)
-- [ ] Sub-pixel precision:16.8 vs 16.4(Phase 0 驗證圖質影響)
-- [ ] PA 獨立 rcp 還是走 SC SFU(latency vs 面積)
+- [x] Points / lines expansion 位置:**PA** is the chosen home (kept simple — RS sees only triangles).
+- [x] Sub-pixel precision:**16.8 fixed-point** at PA output. Sufficient for the current 49-scene conformance set.
+- [ ] PA 獨立 rcp 還是走 SC SFU(latency vs 面積) — Phase 2.x; today both LT and CA call the host `gpu::sim` rcp helper.
+- [ ] STRIP / FAN modes — Phase 2.x. TRIANGLES mode only at v1 (matches what glcompat exercises).

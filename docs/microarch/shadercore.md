@@ -1,9 +1,9 @@
 ---
 block: SC
 name: Shader Core
-version: 0.1 (draft)
+version: 1.0 (frozen)
 owner: E1
-last_updated: 2026-04-25
+last_updated: 2026-04-26
 ---
 
 # SC — Shader Core Microarchitecture
@@ -11,6 +11,13 @@ last_updated: 2026-04-25
 ## Purpose
 
 Unified SIMT shader core,執行 VS 和 FS。最複雜的 block。
+
+## Implementation Status
+
+- **Phase-1 LT** — `ShaderCoreLt` in [`systemc/blocks/shadercore/`](../../systemc/blocks/shadercore/). Sprint 5; warp executor (16-thread) Sprint 6; ISA v1.1 (MEM class bits + per-lane `break`) Sprint 7.
+- **Phase-2 CA** — `ShaderCoreCa` (Sprint 20). **Single ShaderJob at a time, no warp scheduling**. The 1 cyc/instruction stamp is enough to validate the wire interface; real 4-warp × 16-lane scheduling with per-pipe scoreboard is Phase 2.x.
+- **ISA simulator** — `gpu::sim::execute` / `execute_warp` in `compiler/sim/`. Both LT/CA SC blocks call into the same library, so they are bit-exact. FP polynomials via `sw_ref/src/fp/fp32.cpp` (Sprint 16, ~1e-2..1e-3 relative; LUT-assisted 3 ULP is a follow-up).
+- **Out of scope for v1**: dual-issue, atomics, barriers (none of these are in ES 2.0).
 
 ## Block Diagram
 
@@ -137,8 +144,8 @@ Warp scheduler 每 cycle 從 ready warp 選一個。Hazard 透過 scoreboard。
 
 ## Open Questions
 
-- [ ] Warp slot 數 N:4 vs 8(area vs latency hiding)
-- [ ] RF 分配:static vs dynamic occupancy
-- [ ] SFU 是否 replicated(1 unit vs per-lane)
-- [ ] Dual-issue(ALU + TMU 同 cycle)是否 v1
-- [ ] Barrier / atomics:v1 不做(ES 2.0 沒有)
+- [ ] Warp slot 數 N:4 vs 8(area vs latency hiding) — Phase 2.x; CA model is single-job today.
+- [x] RF 分配:**compiler-told GPR count, runtime allocate from a shared pool**.
+- [x] SFU 是否 replicated:**single shared SFU pipe** (sw_ref / sim share one math library — Sprint 16).
+- [x] Dual-issue:**out of v1** (ALU + TMU 同 cycle 不做). Revisit when CA scheduler matures.
+- [x] Barrier / atomics:**out of v1** (ES 2.0 没有).

@@ -1,9 +1,9 @@
 ---
 block: PMU
 name: Performance Monitor Unit
-version: 0.1 (draft)
+version: 1.0 (frozen)
 owner: E3
-last_updated: 2026-04-25
+last_updated: 2026-04-26
 ---
 
 # PMU — Performance Monitor Unit Microarchitecture
@@ -11,6 +11,12 @@ last_updated: 2026-04-25
 ## Purpose
 
 64 個 32-bit counter + trace buffer。Event 來自各 block,透過 mux 選源。
+
+## Implementation Status
+
+- **Phase-1 LT** — `PerfMonitorUnitLt` in [`systemc/blocks/perfmonitorunit/`](../../systemc/blocks/perfmonitorunit/) (Sprint 34). Single rolling cycle counter derived from `sc_time_stamp() / cycle_period` (default 1 ns/cycle, configurable). Per `PmuJob`: snapshots count into `job->cycles`.
+- **Phase-2 CA** — `PerfMonitorUnitCa` (Sprint 28). Dedicated `SC_CTHREAD` ticking every clock edge from `rst_n` deassertion; per `PmuJob`: snapshot.
+- **Out of scope for v1**: full 64-counter bank, event bus router, trace buffer, off-chip trace pin. Only the cycle counter is implemented.
 
 ## Block Diagram
 
@@ -111,6 +117,6 @@ Event IDs Phase 0 末表列完整。
 
 ## Open Questions
 
-- [ ] Event bus width(K bits):目前估 ~200 bit,集中 vs distributed
-- [ ] Trace buffer size:32 KB 是否夠(FPGA debug 需要)
-- [ ] Off-chip trace pin 數(面積 vs debug bandwidth)
+- [ ] Event bus width(K bits) — Phase 2.x; depends on which counters land in v1.5.
+- [ ] Trace buffer size:32 KB 是否夠 — Phase 2.x; trace buffer not implemented in either LT or CA.
+- [ ] Off-chip trace pin 數 — deferred until physical-design choices settle.

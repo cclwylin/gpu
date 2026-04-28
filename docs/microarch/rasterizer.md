@@ -1,9 +1,9 @@
 ---
 block: RS
 name: Rasterizer (MSAA-aware)
-version: 0.1 (draft)
+version: 1.0 (frozen)
 owner: E2
-last_updated: 2026-04-25
+last_updated: 2026-04-26
 ---
 
 # RS — Rasterizer Microarchitecture
@@ -15,6 +15,13 @@ Render phase(per tile),對每個 triangle:
 2. Coarse raster(tile-level quick reject)
 3. Fine raster(per-pixel edge test + 4-sample MSAA coverage)
 4. Barycentric → varying interpolation(送 SC 跑 FS)
+
+## Implementation Status
+
+- **Phase-1 LT** — `RasterizerLt` in [`systemc/blocks/rasterizer/`](../../systemc/blocks/rasterizer/) (Sprint 14). 1× and 4× MSAA paths, D3D rotated-grid pattern, perspective-correct varying via 1/w. Math copied from `sw_ref/src/pipeline/rasterizer.cpp`.
+- **Phase-2 CA** — `RasterizerCa` (Sprint 22). Per-pixel-centre barycentric for varying / depth. 1 cyc/fragment placeholder; coarse-raster + per-tile binning are Phase 2.x.
+- **sw_ref** — Sprint 3 baseline (1× + 4× MSAA, edge-fn). Sprint 17 added scissor (LT/CA still pending).
+- **Out of scope for v1**: hierarchical-Z, scissor in CA path, points/lines (handled at PA expansion).
 
 ## Block Diagram
 
@@ -128,7 +135,7 @@ Triangle inside ⇔ 三個 edge 同號。
 
 ## Open Questions
 
-- [ ] Setup unit FP 還是 fixed-point(精度 vs 面積)
-- [ ] Hier-Z / tile-level depth summary 是否 v1
-- [ ] Coverage eval 4× parallel 還是 time-mux(timing trial 後定)
-- [ ] Tie-break rule:top-left convention 是否與 OpenGL spec 一致(要 double-check)
+- [x] Setup unit:**FP** in v1 (matches sw_ref). Fixed-point pass is a Phase 2.x area optimisation.
+- [x] Hier-Z / tile-level depth summary:**deferred** (v1 skips; coarse Z is bundled with coarse raster, not standalone).
+- [ ] Coverage eval 4× parallel 還是 time-mux — Phase 2.x; CA model evaluates serially (1 cyc/fragment).
+- [ ] Tie-break rule:**top-left** assumed (D3D / OpenGL agree); pixel-centre eval avoids edge-tie ambiguity in current tests, but a dedicated test scene would close this Q properly.

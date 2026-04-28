@@ -1,9 +1,9 @@
 ---
 block: TBF
 name: Tile Buffer
-version: 0.1 (draft)
+version: 1.0 (frozen)
 owner: E2
-last_updated: 2026-04-25
+last_updated: 2026-04-26
 ---
 
 # TBF — Tile Buffer Microarchitecture
@@ -12,6 +12,12 @@ last_updated: 2026-04-25
 
 On-chip SRAM 存 per-sample color / depth / stencil。tile 結束時由 RSV 讀出
 resolve 寫 DRAM。
+
+## Implementation Status
+
+- **Phase-1 LT** — `TileBufferLt` in [`systemc/blocks/tilebuffer/`](../../systemc/blocks/tilebuffer/) (Sprint 34). Storage placeholder: actual `color_samples` / `depth_samples` / `stencil_samples` live on the host as `Context::fb.*`. The LT block accepts a `TileFlushJob*` and forwards via initiator socket to RSV.
+- **Phase-2 CA** — `TileBufferCa` (Sprint 26). Same storage model; the on-chip SRAM is modelled by host-side fb. Zero-cycle flush stamp (the upstream PFO already accounts for per-quad throughput).
+- **Out of scope for v1**: 8-bank SRAM bank-conflict modeling, BIST, double-buffered tile pipelining, dedicated early-Z read port.
 
 ## Capacity
 
@@ -109,7 +115,7 @@ Phase 2 決定最終 layout;初始 design 8 bank × 8 KB。
 
 ## Open Questions
 
-- [ ] 64 KB 是否需要 double-buffer(影響面積)
-- [ ] 8 bank 是否夠(worst case conflict 頻率)
-- [ ] SRAM 是否 splitting color/depth/stencil 到不同 instance(timing vs area)
-- [ ] Early-Z read 是否走 dedicated port
+- [ ] 64 KB 是否需要 double-buffer — Phase 2.x; current models are single-buffered (host vec).
+- [ ] 8 bank 是否夠 — Phase 2.x; bank conflict modeling not implemented.
+- [ ] SRAM 是否 splitting color/depth/stencil — Phase 2.x; `Framebuffer` keeps them as separate vectors today.
+- [ ] Early-Z read 是否走 dedicated port — deferred until early-Z lands in PFO.
