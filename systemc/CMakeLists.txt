@@ -36,6 +36,29 @@ if(NOT SystemCLanguage_FOUND)
     endforeach()
 endif()
 if(NOT SystemCLanguage_FOUND)
+    # Sprint 62 — Homebrew's systemc 3.0.2 bottle ships headers + libs but
+    # no SystemCLanguageConfig.cmake. Synthesize the INTERFACE target by
+    # hand if we find brew's install on macOS arm64 / x86_64.
+    foreach(brew_prefix /opt/homebrew /usr/local)
+        # Brew places `<prefix>/include/systemc` and `<prefix>/include/sysc/`,
+        # so the include path is `<prefix>/include` (not `.../include/systemc`).
+        if(EXISTS "${brew_prefix}/include/systemc"
+           AND EXISTS "${brew_prefix}/include/sysc/kernel"
+           AND (EXISTS "${brew_prefix}/lib/libsystemc.dylib"
+                OR EXISTS "${brew_prefix}/lib/libsystemc.a"))
+            add_library(SystemC::systemc INTERFACE IMPORTED)
+            target_include_directories(SystemC::systemc INTERFACE
+                "${brew_prefix}/include")
+            find_library(_SC_LIB systemc PATHS "${brew_prefix}/lib" NO_DEFAULT_PATH)
+            target_link_libraries(SystemC::systemc INTERFACE "${_SC_LIB}")
+            set(SystemCLanguage_FOUND TRUE)
+            set(_SC_LIB_DIR "${brew_prefix}/lib")
+            message(STATUS "Found SystemC via Homebrew: ${brew_prefix}")
+            break()
+        endif()
+    endforeach()
+endif()
+if(NOT SystemCLanguage_FOUND)
     message(WARNING "SystemC not found; skipping systemc/")
     return()
 endif()
@@ -43,8 +66,10 @@ endif()
 # Derive the SystemC lib dir from the cmake-config file location:
 #   SystemCLanguage_DIR = <prefix>/lib/cmake/SystemCLanguage
 #   → <prefix>/lib
-get_filename_component(_SC_LIB_DIR "${SystemCLanguage_DIR}/../.." ABSOLUTE)
-message(STATUS "Found SystemC: ${SystemCLanguage_DIR}  (libdir ${_SC_LIB_DIR})")
+if(NOT DEFINED _SC_LIB_DIR)
+    get_filename_component(_SC_LIB_DIR "${SystemCLanguage_DIR}/../.." ABSOLUTE)
+endif()
+message(STATUS "SystemC libdir: ${_SC_LIB_DIR}")
 
 add_library(gpu_systemc STATIC
     blocks/commandprocessor/src/commandprocessor_lt.cpp
