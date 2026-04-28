@@ -28,9 +28,9 @@ using TexSampler = std::function<Vec4(uint8_t slot, Vec4 uv, uint8_t mode, float
 
 struct ThreadState {
     std::array<Vec4, 32> r{};        // GPRs
-    std::array<Vec4, 16> c{};        // constants (warp-shared in real HW)
+    std::array<Vec4, 32> c{};        // constants (warp-shared in real HW; 32 slots — Sprint 56)
     std::array<Vec4, 8>  varying{};  // FS inputs (per-thread)
-    std::array<Vec4, 4>  o{};        // outputs
+    std::array<Vec4, 8>  o{};        // outputs (Sprint 58 widened 4→8)
     bool                 lane_active = true;       // killed via `kil`
     bool                 predicate = false;        // single-lane analog of warp p
     int                  varying_count = 0;

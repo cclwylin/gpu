@@ -39,7 +39,13 @@ constexpr inline uint64_t put(uint64_t v, int hi, int lo) {
 // 11:7 s2id | 6 n2 | 5 a2 | 4 dst_class | 3:0 reserved
 //
 // dst_class: 0 = GPR (dst[4:0] = r0..r31)
-//            1 = output (dst[1:0] = o0..o3, dst[4:2] reserved)
+//            1 = output (dst[2:0] = o0..o7, dst[4:3] reserved)
+//            Sprint 58 — widened from 2 bits (4 outputs) to 3 bits (8
+//            outputs) so a VS can drive the full 7 vec4 of varying
+//            capacity that the runtime Vertex.varying[] already exposes.
+//            GLES 2.0 spec mandates `gl_MaxVaryingVectors >= 8`; we
+//            now report a usable 7 (8 outputs minus the o0 gl_Position
+//            slot).
 struct AluFields {
     uint8_t op;        // 6 bits
     uint8_t sat;       // 1
@@ -138,7 +144,7 @@ inline FlowFields decode_flow(Inst i) {
 // 63:58 op | 57:56 pmd | 55:51 dst | 50:47 wmsk | 46:42 src
 // 41:34 src_swiz | 33:30 tex | 29:27 mode | 26 dst_class | 25:24 src_class | 23:0 imm
 //
-// dst_class: 0 = GPR (dst[4:0] = r0..r31), 1 = output (dst[1:0] = o0..o3)
+// dst_class: 0 = GPR (dst[4:0] = r0..r31), 1 = output (dst[2:0] = o0..o7)
 // src_class: 00 = GPR, 01 = const, 10 = varying  (matches ALU SrcClass)
 struct MemFields {
     uint8_t  op;
@@ -213,6 +219,6 @@ constexpr inline bool wmsk_w(uint8_t m) { return m & 0x8; }
 // from reserved). dst[4:0] is the index in either case. Outputs use
 // dst[1:0] (o0..o3); upper bits ignored.
 constexpr inline uint8_t encode_dst_gpr(uint8_t r) { return r & 0x1F; }
-constexpr inline uint8_t encode_dst_out(uint8_t o) { return o & 0x03; }
+constexpr inline uint8_t encode_dst_out(uint8_t o) { return o & 0x07; }
 
 }  // namespace gpu::isa

@@ -37,10 +37,28 @@ struct CompileResult {
     std::vector<Binding> varyings_in;    // FS: v0..v7
     std::vector<Binding> samplers;       // tex0..tex15
 
+    // Compiler-managed float literal pool. Each entry says "load
+    // `value` into c[slot].x at draw time"; the host (glcompat /
+    // runner) is responsible for writing it into ctx.draw.uniforms.
+    // Sprint 9 reserves these from the top of the const bank, growing
+    // downward.
+    struct Literal { int slot; float value; };
+    std::vector<Literal> literals;
+
     std::string error;
     int error_line = 0;
 };
 
-CompileResult compile(const std::string& source, ShaderStage stage);
+// Sprint 55+56 — `uniform_slot_base` lets the host (glcompat) compile
+// VS and FS into a *shared* c-bank without colliding. `literal_slot_top`
+// is where FS literals grow down from. `preset_literals` lets FS reuse
+// VS's already-assigned literal slots when the value matches — without
+// dedup, the c-bank's 16 slots overflow on shaders with many distinct
+// literals. Default values keep single-stage call sites unchanged.
+struct LiteralBinding { int slot; float value; };
+CompileResult compile(const std::string& source, ShaderStage stage,
+                      int uniform_slot_base = 0,
+                      int literal_slot_top  = 32,    // Sprint 56 — c-bank grew 16 → 32
+                      const std::vector<LiteralBinding>& preset_literals = {});
 
 }  // namespace gpu::glsl

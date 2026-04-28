@@ -58,7 +58,8 @@ const Vec4& read_src_lane(const ThreadState& t, uint8_t cls, uint8_t idx) {
 Vec4& dst_lvalue_lane(ThreadState& t, uint8_t dst, uint8_t dst_class) {
     static Vec4 sink{};
     if (dst_class) {
-        uint8_t i = dst & 0x3;
+        // Sprint 58 — output index 3 bits (o0..o7).
+        uint8_t i = dst & 0x7;
         return i < t.o.size() ? t.o[i] : sink;
     }
     return (dst & 0x1F) < t.r.size() ? t.r[dst & 0x1F] : sink;
