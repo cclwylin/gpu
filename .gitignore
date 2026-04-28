@@ -1,6 +1,26 @@
-# Build
+# Build (per-host: build-x86_64/ on Intel Mac, build-arm64/ on Apple Silicon;
+# the bare build/ form is kept for legacy / non-macOS hosts.)
 build/
+build-*/
+build_vkglcts/
+build_vkglcts-*/
 out/
+
+# VK-GL-CTS — full Khronos repo cloned by tools/build_vkglcts.sh (~12 GB
+# including externals). Ignore the whole tree; refresh via the script.
+tests/VK-GL-CTS/
+
+# glmark2 — third-party benchmark cloned for source reference, not built
+# in-tree (see docs/glmark2_*.md). 762 MB.
+tests/glmark2/
+
+# Mark Kilgard / Mesa demos — third-party C sources; the regress runner
+# pulls them at build time. 59 MB.
+tests/examples/
+
+# macOS AppleDouble shadows that leak in when this tree is mounted on a
+# non-HFS volume (exFAT, NTFS) — they break cmake glob and python glob.
+._*
 *.o
 *.obj
 *.a
@@ -22,7 +42,14 @@ transcript
 __pycache__/
 *.pyc
 .pytest_cache/
-.venv/
+# .venv/ is intentionally tracked — it's a tiny dispatcher stub that
+# `source`-routes to ~/.local/share/gpu-venv/<arch>/ on each Mac. Real
+# venvs can't live on this exFAT volume because macOS keeps creating
+# `._*` AppleDouble shadows inside site-packages/ that Python's site
+# loader chokes on. Track the stub; ignore any local venv users still
+# create at the legacy paths.
+.venv-x86_64/
+.venv-arm64/
 venv/
 
 # IDE
