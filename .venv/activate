@@ -1,0 +1,58 @@
+# GPU project — per-arch venv dispatcher.
+#
+# This file lives on a shared exFAT external drive between an Intel iMac
+# (x86_64) and a Mac mini M4 (arm64). A real venv can't live on exFAT
+# because macOS keeps creating AppleDouble `._*` shadow files inside
+# `site-packages/`, which Python's site loader then tries to import as
+# `.pth` files and trips a UTF-8 decode error. Instead, each machine
+# keeps its real venv off-volume at:
+#
+#     ~/.local/share/gpu-venv/<arch>/
+#
+# This stub is `source`-only — `source .venv/activate`. It picks the
+# right per-arch venv and delegates to that venv's real `activate`.
+# After that, $PATH points at the per-arch bin, so `python`, `pip`,
+# `pytest`, … all dispatch correctly.
+#
+# (The path is `.venv/activate`, not the stdlib-default
+# `.venv/bin/activate`, to match the convention this project's other
+# repos use. There is no real `.venv/bin/` directory here.)
+#
+# Bootstrap (first time on each machine):
+#
+#     python3 -m venv ~/.local/share/gpu-venv/$(uname -m)
+#     ~/.local/share/gpu-venv/$(uname -m)/bin/pip install -U pip
+#     ~/.local/share/gpu-venv/$(uname -m)/bin/pip install -r third_party/requirements.txt
+#
+# Or run `tools/setup_env.sh --bootstrap-venv` which does the above for
+# the current host's arch.
+
+# Resolve this file's path portably across bash and zsh, then walk up
+# `.venv/activate` (one level: dirname is `.venv/`) → repo root.
+if [ -n "${ZSH_VERSION:-}" ]; then
+    _self="${(%):-%x}"
+else
+    _self="${BASH_SOURCE[0]:-$0}"
+fi
+_repo="$(cd "$(dirname "${_self}")/.." && pwd)"
+_arch="$(uname -m)"
+_target="${HOME}/.local/share/gpu-venv/${_arch}"
+
+if [ ! -f "${_target}/bin/activate" ]; then
+    echo "[.venv] no per-arch venv found at: ${_target}" >&2
+    echo "[.venv] bootstrap with:"                       >&2
+    echo "        python3 -m venv \"${_target}\""        >&2
+    echo "        \"${_target}/bin/pip\" install -U pip" >&2
+    echo "        \"${_target}/bin/pip\" install -r \"${_repo}/third_party/requirements.txt\"" >&2
+    echo "[.venv] or:  ${_repo}/tools/setup_env.sh --bootstrap-venv" >&2
+    unset _self _repo _arch _target
+    return 1 2>/dev/null || exit 1
+fi
+
+# Source the real per-arch activate. It exports VIRTUAL_ENV + prepends
+# its own bin/ to PATH, so further `python` / `pip` calls hit the right
+# arch automatically.
+# shellcheck disable=SC1090
+. "${_target}/bin/activate"
+
+unset _self _repo _arch _target

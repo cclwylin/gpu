@@ -1,0 +1,39 @@
+# Conformance: 3 batches with distinct render state — exercises state
+# save/restore between batches in scene_runner + sc_pattern_runner.
+#   batch 1: red opaque up-triangle, blend off.
+#   batch 2: green half-alpha down-triangle, blend on (mix where overlapping).
+#   batch 3: blue CW (back-face) triangle, cull_back on → entirely culled.
+# Net result: red+green overlap mix in the central hexagon, pure red on top
+# wedge, dim-green on bottom wedge; blue must NOT appear anywhere.
+width  32
+height 32
+msaa   0
+clear  0
+batch
+  blend 0
+  verts
+    0.0   0.7  0.0  1.0   1.0  0.1  0.1  1.0
+   -0.7  -0.7  0.0  1.0   1.0  0.1  0.1  1.0
+    0.7  -0.7  0.0  1.0   1.0  0.1  0.1  1.0
+  end_verts
+end_batch
+batch
+  blend 1
+  verts
+    0.0  -0.7  0.0  1.0   0.1  1.0  0.1  0.5
+    0.7   0.7  0.0  1.0   0.1  1.0  0.1  0.5
+   -0.7   0.7  0.0  1.0   0.1  1.0  0.1  0.5
+  end_verts
+end_batch
+batch
+  cull_back 1
+  verts
+   # CW winding (back-face) — must be culled. If it ever shows up, blue
+   # pixels will leak into the otherwise red/green/black framebuffer.
+    0.0   0.0  0.0  1.0   0.1  0.1  1.0  1.0
+    0.4  -0.4  0.0  1.0   0.1  0.1  1.0  1.0
+   -0.4  -0.4  0.0  1.0   0.1  0.1  1.0  1.0
+  end_verts
+end_batch
+golden_ppm      multi_batch_state.golden.ppm
+expect_rmse_max 0.5

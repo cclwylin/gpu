@@ -1,0 +1,28 @@
+# Conformance: backface culling — only the CCW (front) triangle survives.
+# Same screen footprint, but the second batch lists vertices in CW order
+# so primitive_assembly's signed-area test rejects it under cull_back=1.
+width  32
+height 32
+msaa   0
+clear  0
+batch
+  cull_back 1
+  verts
+   # CCW (front-face), red — passes cull.
+    0.0   0.7  0.0  1.0   1.0  0.1  0.1  1.0
+   -0.7  -0.7  0.0  1.0   1.0  0.1  0.1  1.0
+    0.7  -0.7  0.0  1.0   1.0  0.1  0.1  1.0
+  end_verts
+end_batch
+batch
+  cull_back 1
+  verts
+   # CW (back-face) version of the *same* triangle, blue — culled.
+   # Two vertices swapped vs. the CCW batch flips the signed area.
+    0.0   0.7  0.0  1.0   0.1  0.1  1.0  1.0
+    0.7  -0.7  0.0  1.0   0.1  0.1  1.0  1.0
+   -0.7  -0.7  0.0  1.0   0.1  0.1  1.0  1.0
+  end_verts
+end_batch
+golden_ppm      cull_backface.golden.ppm
+expect_rmse_max 0.5

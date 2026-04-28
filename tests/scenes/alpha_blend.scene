@@ -1,0 +1,30 @@
+# Conformance: alpha_blend src-over (default SrcAlpha / OneMinusSrcAlpha).
+# Red opaque triangle, then green half-alpha triangle drawn on top. The
+# central overlap region must show a mix (~50/50 red+green); pure-red and
+# pure-green-on-black bands prove the blend equation only fired in overlap.
+width  32
+height 32
+msaa   0
+clear  0
+batch
+  blend 0
+  verts
+   # Up-triangle, opaque red.
+    0.0   0.7  0.0  1.0   1.0  0.1  0.1  1.0
+   -0.7  -0.7  0.0  1.0   1.0  0.1  0.1  1.0
+    0.7  -0.7  0.0  1.0   1.0  0.1  0.1  1.0
+  end_verts
+end_batch
+batch
+  blend 1
+  verts
+   # Down-triangle, half-alpha green. Central hexagon overlaps the red
+   # triangle — those fragments must src-over-blend; the rest renders
+   # premultiplied against the black clear (0.5*green + 0.5*0 = dim green).
+    0.0  -0.7  0.0  1.0   0.1  1.0  0.1  0.5
+    0.7   0.7  0.0  1.0   0.1  1.0  0.1  0.5
+   -0.7   0.7  0.0  1.0   0.1  1.0  0.1  0.5
+  end_verts
+end_batch
+golden_ppm      alpha_blend.golden.ppm
+expect_rmse_max 0.5
