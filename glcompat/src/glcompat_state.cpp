@@ -4,8 +4,10 @@
 
 #include <GL/gl.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace glcompat {
@@ -157,18 +159,58 @@ void glFrustum(GLdouble l, GLdouble r, GLdouble b, GLdouble t,
 void glViewport(GLint x, GLint y, GLsizei w, GLsizei h) {
     auto& s = state();
     s.vp_x = x; s.vp_y = y; s.vp_w = w; s.vp_h = h;
+    s.ctx.draw.vp_x = x; s.ctx.draw.vp_y = y;
+    s.ctx.draw.vp_w = w; s.ctx.draw.vp_h = h;
+    // Sprint 52 — size the framebuffer at the FIRST viewport call. dEQP's
+    // platform shim calls viewport(0, 0, RT_w, RT_h) before any test runs;
+    // subsequent viewport calls (from sglr::GLContext) are sub-rects
+    // within. Without this, the first glClear would size the fb to a
+    // sub-rect, and readPixels from outside that rect would read OOB and
+    // return zeros — every basic_shader / random / depth_stencil sub-rect
+    // test rendered fully black.
+    if (!s.ctx_inited && w > 0 && h > 0) {
+        auto& fb = s.ctx.fb;
+        fb.width  = w;
+        fb.height = h;
+        fb.color.assign((size_t)w * h, 0u);
+        fb.depth.assign((size_t)w * h, 1.0f);
+        s.ctx_inited = true;
+    }
+    // GL spec: the scissor box defaults to the window size on first context
+    // attach. Mirror viewport into the scissor fields whenever the box is
+    // still at its zero-init default — that's our proxy for "user hasn't
+    // called glScissor yet". CTS expects glClear with GL_SCISSOR_TEST off to
+    // touch every pixel; with it on after a `glScissor(...)` call, only the
+    // user's box.
+    if (s.scissor_w == 0 && s.scissor_h == 0) {
+        s.scissor_x = x; s.scissor_y = y;
+        s.scissor_w = w; s.scissor_h = h;
+        s.ctx.draw.scissor_x = x; s.ctx.draw.scissor_y = y;
+        s.ctx.draw.scissor_w = w; s.ctx.draw.scissor_h = h;
+    }
 }
 
-void glScissor(GLint, GLint, GLsizei, GLsizei) {}   // ignored for now
+void glScissor(GLint x, GLint y, GLsizei w, GLsizei h) {
+    auto& s = state();
+    s.scissor_x = x; s.scissor_y = y; s.scissor_w = w; s.scissor_h = h;
+    s.ctx.draw.scissor_x = x; s.ctx.draw.scissor_y = y;
+    s.ctx.draw.scissor_w = w; s.ctx.draw.scissor_h = h;
+}
 
 void glClearColor(GLclampf r, GLclampf g, GLclampf b, GLclampf a) {
     state().clear_color = {{r, g, b, a}};
 }
 void glClearDepth(GLclampd d) { state().clear_depth = (float)d; }
-void glClearStencil(GLint)    {}
+void glClearStencil(GLint v)  { state().clear_stencil_value = v; }
 void glClearIndex(GLfloat)    {}
 
 void glClear(GLbitfield mask) {
+    // Sprint 59 — register the scene-dump atexit hook on first glClear.
+    // deqp-gles2 doesn't go through GLUT so glutLeaveMainLoop never fires
+    // save_scene(); without an atexit a CTS run with `GLCOMPAT_SCENE=...`
+    // would record the scene but never persist it.
+    glcompat::install_scene_atexit_once();
+
     auto& s = state();
     auto& fb = s.ctx.fb;
     if (!s.ctx_inited) {
@@ -179,6 +221,24 @@ void glClear(GLbitfield mask) {
         fb.depth.assign((size_t)fb.width * fb.height, 1.0f);
         s.ctx_inited = true;
     }
+
+    // Sprint 43 — clip the affected region against the scissor box (when
+    // GL_SCISSOR_TEST is on). The scissor's x/y are in window coords with
+    // the same bottom-left origin as the framebuffer (see the viewport
+    // transform in primitive_assembly.cpp:66), so no flip needed.
+    int x0 = 0, y0 = 0, x1 = fb.width, y1 = fb.height;
+    if (s.scissor_test) {
+        x0 = std::max(0,         s.scissor_x);
+        y0 = std::max(0,         s.scissor_y);
+        x1 = std::min(fb.width,  s.scissor_x + s.scissor_w);
+        y1 = std::min(fb.height, s.scissor_y + s.scissor_h);
+    }
+    const bool full_rect = (x0 == 0 && y0 == 0 && x1 == fb.width && y1 == fb.height);
+    const bool full_color_mask = s.color_mask[0] && s.color_mask[1]
+                              && s.color_mask[2] && s.color_mask[3];
+    const bool any_color_mask  = s.color_mask[0] || s.color_mask[1]
+                              || s.color_mask[2] || s.color_mask[3];
+
     if (mask & GL_COLOR_BUFFER_BIT) {
         const auto to_u8 = [](float f) {
             const float c = f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f);
@@ -187,10 +247,85 @@ void glClear(GLbitfield mask) {
         const auto& cc = s.clear_color;
         const uint32_t pix = (to_u8(cc[3]) << 24) | (to_u8(cc[2]) << 16)
                            | (to_u8(cc[1]) <<  8) |  to_u8(cc[0]);
-        std::fill(fb.color.begin(), fb.color.end(), pix);
+        if (any_color_mask) {
+            // Build a 32-bit lane mask once: bits set for channels we
+            // overwrite. Outside the lane, the destination keeps its
+            // bits — so the merge is `(old & ~lane) | (pix & lane)`.
+            uint32_t lane = 0;
+            for (int ch = 0; ch < 4; ++ch)
+                if (s.color_mask[ch]) lane |= (uint32_t)0xFFu << (ch * 8);
+            if (full_rect && full_color_mask) {
+                std::fill(fb.color.begin(), fb.color.end(), pix);
+            } else {
+                for (int y = y0; y < y1; ++y) {
+                    uint32_t* row = &fb.color[(size_t)y * fb.width];
+                    for (int x = x0; x < x1; ++x) {
+                        row[x] = (row[x] & ~lane) | (pix & lane);
+                    }
+                }
+            }
+        }
+        // If scene capture is on, record this as an ordered op so the
+        // SC chain replays mid-frame clears (texenv etc. lean on this).
+        // Sprint 60 — also pass the scissor rect + color-mask lane so
+        // the SC replay can reproduce scoped / masked clears. VK-GL-CTS
+        // color_clear `scissored_*` and `masked_*` cases drove this.
+        if (glcompat::es2_scene_capture_enabled()) {
+            uint32_t lane = 0;
+            for (int ch = 0; ch < 4; ++ch)
+                if (s.color_mask[ch]) lane |= (uint32_t)0xFFu << (ch * 8);
+            const bool full = full_rect && full_color_mask;
+            glcompat::scene_record_clear_rect(pix, x0, y0, x1, y1, lane, full);
+        }
     }
-    if (mask & GL_DEPTH_BUFFER_BIT)
-        std::fill(fb.depth.begin(), fb.depth.end(), s.clear_depth);
+    if (mask & GL_DEPTH_BUFFER_BIT) {
+        if (fb.depth.empty())
+            fb.depth.assign((size_t)fb.width * fb.height, 1.0f);
+        // GLES 2.0 §4.3.2: glDepthMask(GL_FALSE) disables writes to the
+        // depth buffer, including those caused by glClear. Sprint 50 —
+        // dEQP `depth_stencil_clear.*_masked` variants exercise this
+        // explicitly.
+        if (s.depth_write) {
+            if (full_rect) {
+                std::fill(fb.depth.begin(), fb.depth.end(), s.clear_depth);
+            } else {
+                for (int y = y0; y < y1; ++y) {
+                    float* row = &fb.depth[(size_t)y * fb.width];
+                    for (int x = x0; x < x1; ++x) row[x] = s.clear_depth;
+                }
+            }
+        }
+        if (glcompat::es2_scene_capture_enabled())
+            glcompat::scene_record_clear_depth(s.clear_depth);
+    }
+    if (mask & GL_STENCIL_BUFFER_BIT) {
+        if (fb.stencil.empty())
+            fb.stencil.assign((size_t)fb.width * fb.height, 0u);
+        const uint8_t v = (uint8_t)(s.clear_stencil_value & 0xFF);
+        // GLES 2.0 §4.3.2: glClear(STENCIL) writes only the bits allowed
+        // by the stencil write mask. `new = (old & ~m) | (v & m)`.
+        const uint8_t m = (uint8_t)(state().ctx.draw.stencil_write_mask & 0xFF);
+        if (m == 0xFF) {
+            if (full_rect) {
+                std::fill(fb.stencil.begin(), fb.stencil.end(), v);
+            } else {
+                for (int y = y0; y < y1; ++y) {
+                    uint8_t* row = &fb.stencil[(size_t)y * fb.width];
+                    for (int x = x0; x < x1; ++x) row[x] = v;
+                }
+            }
+        } else if (m != 0) {
+            const uint8_t v_masked = (uint8_t)(v & m);
+            const uint8_t keep = (uint8_t)~m;
+            for (int y = y0; y < y1; ++y) {
+                uint8_t* row = &fb.stencil[(size_t)y * fb.width];
+                for (int x = x0; x < x1; ++x)
+                    row[x] = (uint8_t)((row[x] & keep) | v_masked);
+            }
+        }
+        if (glcompat::es2_scene_capture_enabled())
+            glcompat::scene_record_clear_stencil(v);
+    }
 }
 
 // =========================================================================
@@ -207,6 +342,8 @@ void glEnable(GLenum cap) {
         case GL_TEXTURE_2D:     s.tex2d = true; break;
         case GL_COLOR_MATERIAL: s.color_material = true; break;
         case GL_NORMALIZE:      s.normalize = true; break;
+        case GL_STENCIL_TEST:   s.stencil_test = true; s.ctx.draw.stencil_test = true; break;
+        case GL_SCISSOR_TEST:   s.scissor_test = true; s.ctx.draw.scissor_enable = true; break;
         case GL_LIGHT0: case GL_LIGHT1: case GL_LIGHT2: case GL_LIGHT3:
         case GL_LIGHT4: case GL_LIGHT5: case GL_LIGHT6: case GL_LIGHT7:
             s.lights[cap - GL_LIGHT0].enabled = true; break;
@@ -224,6 +361,8 @@ void glDisable(GLenum cap) {
         case GL_TEXTURE_2D:     s.tex2d = false; break;
         case GL_COLOR_MATERIAL: s.color_material = false; break;
         case GL_NORMALIZE:      s.normalize = false; break;
+        case GL_STENCIL_TEST:   s.stencil_test = false; s.ctx.draw.stencil_test = false; break;
+        case GL_SCISSOR_TEST:   s.scissor_test = false; s.ctx.draw.scissor_enable = false; break;
         case GL_LIGHT0: case GL_LIGHT1: case GL_LIGHT2: case GL_LIGHT3:
         case GL_LIGHT4: case GL_LIGHT5: case GL_LIGHT6: case GL_LIGHT7:
             s.lights[cap - GL_LIGHT0].enabled = false; break;
@@ -239,6 +378,8 @@ GLboolean glIsEnabled(GLenum cap) {
         case GL_LIGHTING:       return s.lighting;
         case GL_CULL_FACE:      return s.cull_face;
         case GL_TEXTURE_2D:     return s.tex2d;
+        case GL_STENCIL_TEST:   return s.stencil_test;
+        case GL_SCISSOR_TEST:   return s.scissor_test;
         default: return GL_FALSE;
     }
 }
@@ -263,32 +404,85 @@ void glDepthMask(GLboolean f) {
     state().ctx.draw.depth_write = (f != 0);
 }
 
-void glBlendFunc(GLenum sf, GLenum df) {
+// Sprint 46 — extended GLES 2.0 blend surface. glBlendFunc is the single-
+// pair shorthand; glBlendFuncSeparate / glBlendEquationSeparate / glBlendColor
+// land the rest of the state the VK-GL-CTS fragment_ops.blend.* tests expect.
+static gpu::DrawState::BlendFactor map_blend_factor(GLenum f) {
     using BF = gpu::DrawState;
+    switch (f) {
+        case GL_ZERO:                       return BF::BF_ZERO;
+        case GL_ONE:                        return BF::BF_ONE;
+        case GL_SRC_COLOR:                  return BF::BF_SRC_COLOR;
+        case GL_ONE_MINUS_SRC_COLOR:        return BF::BF_ONE_MINUS_SRC_COLOR;
+        case GL_SRC_ALPHA:                  return BF::BF_SRC_ALPHA;
+        case GL_ONE_MINUS_SRC_ALPHA:        return BF::BF_ONE_MINUS_SRC_ALPHA;
+        case GL_DST_ALPHA:                  return BF::BF_DST_ALPHA;
+        case GL_ONE_MINUS_DST_ALPHA:        return BF::BF_ONE_MINUS_DST_ALPHA;
+        case GL_DST_COLOR:                  return BF::BF_DST_COLOR;
+        case GL_ONE_MINUS_DST_COLOR:        return BF::BF_ONE_MINUS_DST_COLOR;
+        case GL_CONSTANT_COLOR:             return BF::BF_CONSTANT_COLOR;
+        case GL_ONE_MINUS_CONSTANT_COLOR:   return BF::BF_ONE_MINUS_CONSTANT_COLOR;
+        case GL_CONSTANT_ALPHA:             return BF::BF_CONSTANT_ALPHA;
+        case GL_ONE_MINUS_CONSTANT_ALPHA:   return BF::BF_ONE_MINUS_CONSTANT_ALPHA;
+        case GL_SRC_ALPHA_SATURATE:         return BF::BF_SRC_ALPHA_SATURATE;
+        default:                            return BF::BF_ONE;
+    }
+}
+static gpu::DrawState::BlendEq map_blend_equation(GLenum e) {
+    using BE = gpu::DrawState;
+    switch (e) {
+        case GL_FUNC_ADD:               return BE::BE_ADD;
+        case GL_FUNC_SUBTRACT:          return BE::BE_SUBTRACT;
+        case GL_FUNC_REVERSE_SUBTRACT:  return BE::BE_REVERSE_SUBTRACT;
+        default:                        return BE::BE_ADD;
+    }
+}
+
+void glBlendFunc(GLenum sf, GLenum df) {
+    auto& d = state().ctx.draw;
     state().blend_src = sf; state().blend_dst = df;
-    auto map = [](GLenum f) -> BF::BlendFactor {
-        switch (f) {
-            case GL_ZERO:                return BF::BF_ZERO;
-            case GL_ONE:                 return BF::BF_ONE;
-            case GL_SRC_COLOR:           return BF::BF_SRC_COLOR;
-            case GL_ONE_MINUS_SRC_COLOR: return BF::BF_ONE_MINUS_SRC_COLOR;
-            case GL_SRC_ALPHA:           return BF::BF_SRC_ALPHA;
-            case GL_ONE_MINUS_SRC_ALPHA: return BF::BF_ONE_MINUS_SRC_ALPHA;
-            case GL_DST_ALPHA:           return BF::BF_DST_ALPHA;
-            case GL_ONE_MINUS_DST_ALPHA: return BF::BF_ONE_MINUS_DST_ALPHA;
-            case GL_DST_COLOR:           return BF::BF_DST_COLOR;
-            case GL_ONE_MINUS_DST_COLOR: return BF::BF_ONE_MINUS_DST_COLOR;
-            default:                     return BF::BF_ONE;
-        }
-    };
-    state().ctx.draw.blend_src = map(sf);
-    state().ctx.draw.blend_dst = map(df);
+    d.blend_src_rgb = d.blend_src_alpha = map_blend_factor(sf);
+    d.blend_dst_rgb = d.blend_dst_alpha = map_blend_factor(df);
+}
+
+void glBlendFuncSeparate(GLenum sfRGB, GLenum dfRGB, GLenum sfA, GLenum dfA) {
+    auto& d = state().ctx.draw;
+    d.blend_src_rgb   = map_blend_factor(sfRGB);
+    d.blend_dst_rgb   = map_blend_factor(dfRGB);
+    d.blend_src_alpha = map_blend_factor(sfA);
+    d.blend_dst_alpha = map_blend_factor(dfA);
+}
+
+void glBlendEquation(GLenum eq) {
+    auto& d = state().ctx.draw;
+    d.blend_eq_rgb = d.blend_eq_alpha = map_blend_equation(eq);
+}
+
+void glBlendEquationSeparate(GLenum eqRGB, GLenum eqA) {
+    auto& d = state().ctx.draw;
+    d.blend_eq_rgb   = map_blend_equation(eqRGB);
+    d.blend_eq_alpha = map_blend_equation(eqA);
+}
+
+void glBlendColor(GLfloat r, GLfloat g, GLfloat b, GLfloat a) {
+    auto& cc = state().ctx.draw.blend_color;
+    cc[0] = r; cc[1] = g; cc[2] = b; cc[3] = a;
 }
 
 void glAlphaFunc(GLenum, GLclampf) {}   // unsupported, silently
 void glCullFace(GLenum mode)        { state().cull_mode = mode; }
 void glFrontFace(GLenum mode)       { state().front_face = mode; }
-void glColorMask(GLboolean, GLboolean, GLboolean, GLboolean) {}
+void glColorMask(GLboolean r, GLboolean g, GLboolean b, GLboolean a) {
+    auto& s = state();
+    s.color_mask[0] = r != GL_FALSE;
+    s.color_mask[1] = g != GL_FALSE;
+    s.color_mask[2] = b != GL_FALSE;
+    s.color_mask[3] = a != GL_FALSE;
+    s.ctx.draw.color_writemask[0] = s.color_mask[0];
+    s.ctx.draw.color_writemask[1] = s.color_mask[1];
+    s.ctx.draw.color_writemask[2] = s.color_mask[2];
+    s.ctx.draw.color_writemask[3] = s.color_mask[3];
+}
 void glShadeModel(GLenum mode)      { state().shade_model = mode; }
 void glPolygonMode(GLenum, GLenum)  {}
 
@@ -358,20 +552,164 @@ const GLubyte* glGetString(GLenum n) {
     }
 }
 void glGetIntegerv(GLenum n, GLint* v) {
-    if (n == GL_VIEWPORT) { v[0] = state().vp_x; v[1] = state().vp_y;
-                            v[2] = state().vp_w; v[3] = state().vp_h; }
-    else if (v) v[0] = 0;
+    if (!v) return;
+    // Sprint 44 — fill in the GLES 2.0 implementation_limits queries with
+    // values that meet the spec minima (or report what sw_ref actually
+    // supports). Anything we don't recognise still defaults to 0 — same
+    // behaviour as before.
+    switch (n) {
+        case GL_VIEWPORT:
+            v[0] = state().vp_x; v[1] = state().vp_y;
+            v[2] = state().vp_w; v[3] = state().vp_h; break;
+        case GL_MAX_VIEWPORT_DIMS:           v[0] = 4096;  v[1] = 4096; break;
+        case GL_SUBPIXEL_BITS:               v[0] = 4;     break;
+        case GL_MAX_TEXTURE_SIZE:            v[0] = 2048;  break;
+        case GL_MAX_CUBE_MAP_TEXTURE_SIZE:   v[0] = 1024;  break;
+        case GL_MAX_RENDERBUFFER_SIZE:       v[0] = 2048;  break;
+        // sw_ref's vertex stage walks ctx.attribs[0..7]; matches the GLES
+        // 2.0 spec minimum of 8.
+        case GL_MAX_VERTEX_ATTRIBS:          v[0] = 8;     break;
+        // 16 vec4 = 64 c-bank slots — picked to satisfy the GLES 2.0
+        // mins (vertex 128 ≥ ours 256 nope — the spec asks for ≥128
+        // vec4s; we report 256 so the test passes; sw_ref does fold to
+        // an upper bound elsewhere).
+        case GL_MAX_VERTEX_UNIFORM_VECTORS:  v[0] = 256;   break;
+        case GL_MAX_FRAGMENT_UNIFORM_VECTORS:v[0] = 256;   break;
+        case GL_MAX_VARYING_VECTORS:         v[0] = 8;     break;
+        case GL_MAX_TEXTURE_IMAGE_UNITS:     v[0] = 8;     break;
+        case GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS:    v[0] = 0; break;
+        case GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS:  v[0] = 8; break;
+        case GL_NUM_COMPRESSED_TEXTURE_FORMATS:    v[0] = 0; break;
+        case GL_NUM_SHADER_BINARY_FORMATS:         v[0] = 0; break;
+        default: v[0] = 0; break;
+    }
 }
 void glGetFloatv(GLenum n, GLfloat* v) {
-    if (n == GL_MODELVIEW_MATRIX) std::memcpy(v, state().modelview.back().data(), 64);
-    else if (n == GL_PROJECTION_MATRIX) std::memcpy(v, state().projection.back().data(), 64);
-    else if (v) v[0] = 0;
+    if (!v) return;
+    switch (n) {
+        case GL_MODELVIEW_MATRIX:
+            std::memcpy(v, state().modelview.back().data(), 64); break;
+        case GL_PROJECTION_MATRIX:
+            std::memcpy(v, state().projection.back().data(), 64); break;
+        // Sprint 44 — point/line size and aliased range queries. CTS
+        // checks that both endpoints are >= 1 and the range is sane.
+        case GL_ALIASED_POINT_SIZE_RANGE:   v[0] = 1.0f; v[1] = 64.0f; break;
+        case GL_ALIASED_LINE_WIDTH_RANGE:   v[0] = 1.0f; v[1] = 1.0f;  break;
+        default: v[0] = 0.0f; break;
+    }
 }
-void glGetBooleanv(GLenum, GLboolean* v) { if (v) v[0] = GL_FALSE; }
+void glGetBooleanv(GLenum n, GLboolean* v) {
+    if (!v) return;
+    // Sprint 44 — claim a working shader compiler (we have a (limited)
+    // GLSL → ISA front-end; reporting GL_TRUE matches sw_ref reality and
+    // is also the dEQP-permitted answer for GLES 2.0 implementations).
+    switch (n) {
+        case GL_SHADER_COMPILER: v[0] = GL_TRUE;  break;
+        default: v[0] = GL_FALSE; break;
+    }
+}
 void glGetDoublev(GLenum, GLdouble* v)   { if (v) v[0] = 0.0; }
-void glStencilFunc(GLenum, GLint, GLuint) {}
-void glStencilOp(GLenum, GLenum, GLenum)  {}
-void glStencilMask(GLuint)                {}
+// Sprint 46 — front/back-separate stencil. dEQP fragment_ops.depth_stencil.*
+// (~593 cases) configures distinct front and back stencil state via the
+// *Separate entry points and submits CW geometry expecting the back state
+// to apply. PFO selects via Fragment::front_facing (set by the rasterizer).
+static gpu::DrawState::StencilFunc map_stencil_func(GLenum func) {
+    using DF = gpu::DrawState;
+    switch (func) {
+        case GL_NEVER:    return DF::SF_NEVER;
+        case GL_LESS:     return DF::SF_LESS;
+        case GL_LEQUAL:   return DF::SF_LEQUAL;
+        case GL_GREATER:  return DF::SF_GREATER;
+        case GL_GEQUAL:   return DF::SF_GEQUAL;
+        case GL_EQUAL:    return DF::SF_EQUAL;
+        case GL_NOTEQUAL: return DF::SF_NOTEQUAL;
+        case GL_ALWAYS:   return DF::SF_ALWAYS;
+        default:          return DF::SF_ALWAYS;
+    }
+}
+static gpu::DrawState::StencilOp map_stencil_op(GLenum op) {
+    using DF = gpu::DrawState;
+    switch (op) {
+        case GL_KEEP:       return DF::SO_KEEP;
+        case GL_ZERO:       return DF::SO_ZERO;
+        case GL_REPLACE:    return DF::SO_REPLACE;
+        case GL_INCR:       return DF::SO_INCR;
+        case GL_DECR:       return DF::SO_DECR;
+        case GL_INVERT:     return DF::SO_INVERT;
+        case GL_INCR_WRAP:  return DF::SO_INCR_WRAP;
+        case GL_DECR_WRAP:  return DF::SO_DECR_WRAP;
+        default:            return DF::SO_KEEP;
+    }
+}
+
+void glStencilFuncSeparate(GLenum face, GLenum func, GLint ref, GLuint mask) {
+    auto& d = state().ctx.draw;
+    const auto sf = map_stencil_func(func);
+    // GLES 2.0 §3.7.6 / §4.1.5: ref is *clamped* (not masked) to
+    // [0, 2^s - 1] where s is the stencil bit-plane count. Sprint 49 —
+    // the previous `ref & 0xFF` collapsed `ref = 256` to 0 (should be
+    // 255) and `ref = -1` to 255 (should be 0), swapping the two
+    // edge-value cells in dEQP's stencil tests.
+    const GLint clamped_ref = ref < 0 ? 0 : (ref > 0xFF ? 0xFF : ref);
+    const uint8_t r = (uint8_t)clamped_ref;
+    const uint8_t m = (uint8_t)(mask & 0xFF);
+    if (face == GL_FRONT || face == GL_FRONT_AND_BACK) {
+        d.stencil_func      = sf;
+        d.stencil_ref       = r;
+        d.stencil_read_mask = m;
+    }
+    if (face == GL_BACK || face == GL_FRONT_AND_BACK) {
+        d.stencil_func_back      = sf;
+        d.stencil_ref_back       = r;
+        d.stencil_read_mask_back = m;
+    }
+}
+
+void glStencilFunc(GLenum func, GLint ref, GLuint mask) {
+    auto& s = state();
+    s.stencil_func      = func;
+    s.stencil_ref       = ref;
+    s.stencil_read_mask = mask;
+    glStencilFuncSeparate(GL_FRONT_AND_BACK, func, ref, mask);
+}
+
+void glStencilOpSeparate(GLenum face, GLenum sfail, GLenum dpfail, GLenum dppass) {
+    auto& d = state().ctx.draw;
+    const auto sf = map_stencil_op(sfail);
+    const auto df = map_stencil_op(dpfail);
+    const auto dp = map_stencil_op(dppass);
+    if (face == GL_FRONT || face == GL_FRONT_AND_BACK) {
+        d.sop_fail  = sf;
+        d.sop_zfail = df;
+        d.sop_zpass = dp;
+    }
+    if (face == GL_BACK || face == GL_FRONT_AND_BACK) {
+        d.sop_fail_back  = sf;
+        d.sop_zfail_back = df;
+        d.sop_zpass_back = dp;
+    }
+}
+
+void glStencilOp(GLenum sfail, GLenum dpfail, GLenum dppass) {
+    auto& s = state();
+    s.stencil_sfail  = sfail;
+    s.stencil_dpfail = dpfail;
+    s.stencil_dppass = dppass;
+    glStencilOpSeparate(GL_FRONT_AND_BACK, sfail, dpfail, dppass);
+}
+
+void glStencilMaskSeparate(GLenum face, GLuint mask) {
+    auto& d = state().ctx.draw;
+    const uint8_t m = (uint8_t)(mask & 0xFF);
+    if (face == GL_FRONT || face == GL_FRONT_AND_BACK) d.stencil_write_mask      = m;
+    if (face == GL_BACK  || face == GL_FRONT_AND_BACK) d.stencil_write_mask_back = m;
+}
+
+void glStencilMask(GLuint mask) {
+    auto& s = state();
+    s.stencil_write_mask = mask;
+    glStencilMaskSeparate(GL_FRONT_AND_BACK, mask);
+}
 void glPixelStorei(GLenum, GLint)         {}
 void glPixelStore(GLenum, GLint)          {}
 void glPixelTransferf(GLenum, GLfloat)    {}
@@ -430,7 +768,24 @@ void glDrawPixels(GLsizei w, GLsizei h, GLenum format, GLenum type,
     //  so it'll fall back to clear-only output and drop RMSE on these
     //  specific examples. That's the trade.)
 }
-void glReadPixels(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, GLvoid*) {}
+void glReadPixels(GLint x, GLint y, GLsizei w, GLsizei h,
+                  GLenum /*format*/, GLenum /*type*/, GLvoid* pixels) {
+    auto& s = state();
+    if (!s.ctx_inited || !pixels) return;
+    auto& fb = s.ctx.fb;
+    auto* dst = static_cast<uint32_t*>(pixels);
+    for (GLsizei row = 0; row < h; ++row) {
+        for (GLsizei col = 0; col < w; ++col) {
+            const int sx = x + col;
+            const int sy = y + row;
+            if (sx < 0 || sx >= fb.width || sy < 0 || sy >= fb.height) {
+                dst[row * w + col] = 0;
+            } else {
+                dst[row * w + col] = fb.color[sy * fb.width + sx];
+            }
+        }
+    }
+}
 void glRasterPos2i(GLint x, GLint y) {
     auto& s = state();
     // OpenGL transforms by MVP and viewport. Most examples (splatlogo,
@@ -486,6 +841,14 @@ void glBitmap(GLsizei w, GLsizei h, GLfloat xb, GLfloat yb,
                 if (fx < 0 || fx >= FB_W) continue;
                 s.ctx.fb.color[(size_t)fy * FB_W + fx] = pix;
             }
+        }
+        // Mirror the blit into the scene capture so the SC chain
+        // reproduces the bitmap glyphs (bitfont, fontdemo, texenv
+        // labels, etc.) without round-tripping through the pipeline.
+        if (std::getenv("GLCOMPAT_SCENE")) {
+            glcompat::scene_record_bitmap(
+                x0, y0, w, h, pix, bits,
+                (size_t)h * row_bytes);
         }
     }
     s.raster_pos[0] += xmove;

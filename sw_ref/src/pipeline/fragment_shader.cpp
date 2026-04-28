@@ -31,7 +31,7 @@ void fragment_shader(Context& ctx, Quad& quad) {
             if (f.coverage_mask == 0) continue;
 
             sim::ThreadState t{};
-            for (int i = 0; i < 16; ++i) t.c[i] = to_sim(ctx.draw.uniforms[i]);
+            for (int i = 0; i < 32; ++i) t.c[i] = to_sim(ctx.draw.uniforms[i]);
             const int vc = ctx.shaders.fs_varying_count;
             for (int i = 0; i < vc && i < 8; ++i) t.varying[i] = to_sim(f.varying[i]);
 

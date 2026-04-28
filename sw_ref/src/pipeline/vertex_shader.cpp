@@ -23,7 +23,7 @@ void vertex_shader(Context& ctx,
         const auto* code = static_cast<const std::vector<uint64_t>*>(ctx.shaders.vs_binary);
         for (const auto& attrs : in_attrs) {
             sim::ThreadState t{};
-            for (int i = 0; i < 16; ++i) t.c[i] = to_sim(ctx.draw.uniforms[i]);
+            for (int i = 0; i < 32; ++i) t.c[i] = to_sim(ctx.draw.uniforms[i]);
             const int n = ctx.shaders.vs_attr_count > 0
                             ? ctx.shaders.vs_attr_count : 8;
             for (int i = 0; i < n; ++i) t.r[i] = to_sim(attrs[i]);

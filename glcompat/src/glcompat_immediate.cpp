@@ -242,7 +242,15 @@ void glGenTextures(GLsizei n, GLuint* out) {
         s.textures.emplace_back();
     }
 }
-void glBindTexture(GLenum, GLuint id) { state().bound_tex = id; }
+void glBindTexture(GLenum, GLuint id) {
+    auto& s = state();
+    s.bound_tex = id;     // legacy 1.x mirror
+    // Sprint 38: route to active ES2 texture unit too.
+    const int unit = static_cast<int>(s.es2_active_texture) - static_cast<int>(GL_TEXTURE0);
+    if (unit >= 0 && unit < (int)s.es2_tex_units.size()) {
+        s.es2_tex_units[unit] = id;
+    }
+}
 void glTexImage2D(GLenum, GLint, GLint internalformat,
                   GLsizei width, GLsizei height, GLint,
                   GLenum format, GLenum type, const GLvoid* pixels) {

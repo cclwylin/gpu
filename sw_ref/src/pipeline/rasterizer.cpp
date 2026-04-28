@@ -7,8 +7,21 @@ namespace gpu::pipeline {
 
 namespace {
 
+// Sprint 44 — promote intermediates to double so the diagonal-edge case
+// (pixel center exactly on the line, where (bx-ax)*(py-ay) and (by-ay)*
+// (px-ax) are mathematically equal) collapses to an exact zero. Clang's
+// default `-ffp-contract=on` would otherwise fuse one of the products
+// into an FMA, producing a tiny non-zero residual whose sign flips
+// across pixels — visible as missing fragments along triangle diagonals
+// (sw_ref.pfo regressed on this until Sprint 44 caught it; CTS depth
+// tests still hit deeper issues but at least the rasterizer is no
+// longer the culprit).
 inline float edge_fn(float ax, float ay, float bx, float by, float px, float py) {
-    return (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+    const double dxab = static_cast<double>(bx) - static_cast<double>(ax);
+    const double dyab = static_cast<double>(by) - static_cast<double>(ay);
+    const double dxap = static_cast<double>(px) - static_cast<double>(ax);
+    const double dyap = static_cast<double>(py) - static_cast<double>(ay);
+    return static_cast<float>(dxab * dyap - dyab * dxap);
 }
 
 // D3D rotated-grid 4x sample pattern, per docs/msaa_spec.md §2.
@@ -45,7 +58,38 @@ void rasterizer(Context& ctx,
 
         const float area = edge_fn(vx0, vy0, vx1, vy1, vx2, vy2);
         if (area == 0.0f) continue;
+        // Sprint 45 — accept both windings. CCW (area > 0) → interior pixels
+        // have all w_i > 0; CW (area < 0) → all w_i < 0. We render both unless
+        // cull_back is on (handled in primitive_assembly via back_face_cull).
+        // Multiplying the edge functions by sign(area) collapses the test to a
+        // single `w_i >= 0` form regardless of winding.
+        const float winding = area > 0.0f ? 1.0f : -1.0f;
         const float inv_area = 1.0f / area;
+
+        // Sprint 46 — top-left fill rule. dEQP's reference rasterizer (and
+        // the GLES spec) include a pixel that lies exactly on a "left" or
+        // "top" edge but exclude pixels on right/bottom edges. Without this,
+        // the diagonal between two triangles of a quad is double-covered,
+        // which shows up as saturation under blend ADD ONE/ONE etc. The
+        // rule below is expressed in terms of the CCW walk a→b: an edge is
+        // top-left iff it goes downward (Δy < 0) or is horizontal walking
+        // right-to-left (Δy == 0 ∧ Δx < 0). For CW input the walk reverses,
+        // so we swap endpoints before the test.
+        auto is_top_left = [](float ax, float ay, float bx, float by) {
+            if (by < ay) return true;                          // left edge (going down)
+            if (ay == by && bx < ax) return true;              // top edge (going right→left)
+            return false;
+        };
+        const bool ccw = winding > 0.0f;
+        const bool tl0 = ccw ? is_top_left(vx1, vy1, vx2, vy2)
+                             : is_top_left(vx2, vy2, vx1, vy1);
+        const bool tl1 = ccw ? is_top_left(vx2, vy2, vx0, vy0)
+                             : is_top_left(vx0, vy0, vx2, vy2);
+        const bool tl2 = ccw ? is_top_left(vx0, vy0, vx1, vy1)
+                             : is_top_left(vx1, vy1, vx0, vy0);
+        auto edge_in = [](float w, bool tl) {
+            return tl ? (w >= 0.0f) : (w > 0.0f);
+        };
 
         auto fmin3 = [](float a, float b, float c) { return std::min(a, std::min(b, c)); };
         auto fmax3 = [](float a, float b, float c) { return std::max(a, std::max(b, c)); };
@@ -74,19 +118,19 @@ void rasterizer(Context& ctx,
                 if (!msaa) {
                     const float cx = px + 0.5f;
                     const float cy = py + 0.5f;
-                    const float w0 = edge_fn(vx1, vy1, vx2, vy2, cx, cy);
-                    const float w1 = edge_fn(vx2, vy2, vx0, vy0, cx, cy);
-                    const float w2 = edge_fn(vx0, vy0, vx1, vy1, cx, cy);
-                    if (w0 >= 0.0f && w1 >= 0.0f && w2 >= 0.0f) mask = 0x1;
+                    const float w0 = winding * edge_fn(vx1, vy1, vx2, vy2, cx, cy);
+                    const float w1 = winding * edge_fn(vx2, vy2, vx0, vy0, cx, cy);
+                    const float w2 = winding * edge_fn(vx0, vy0, vx1, vy1, cx, cy);
+                    if (edge_in(w0, tl0) && edge_in(w1, tl1) && edge_in(w2, tl2)) mask = 0x1;
                 } else {
                     // Per-sample edge eval (4× rotated grid).
                     for (int s = 0; s < 4; ++s) {
                         const float cx = px + 0.5f + kMsaaPattern[s].dx;
                         const float cy = py + 0.5f + kMsaaPattern[s].dy;
-                        const float w0 = edge_fn(vx1, vy1, vx2, vy2, cx, cy);
-                        const float w1 = edge_fn(vx2, vy2, vx0, vy0, cx, cy);
-                        const float w2 = edge_fn(vx0, vy0, vx1, vy1, cx, cy);
-                        if (w0 >= 0.0f && w1 >= 0.0f && w2 >= 0.0f) {
+                        const float w0 = winding * edge_fn(vx1, vy1, vx2, vy2, cx, cy);
+                        const float w1 = winding * edge_fn(vx2, vy2, vx0, vy0, cx, cy);
+                        const float w2 = winding * edge_fn(vx0, vy0, vx1, vy1, cx, cy);
+                        if (edge_in(w0, tl0) && edge_in(w1, tl1) && edge_in(w2, tl2)) {
                             mask |= static_cast<uint8_t>(1 << s);
                         }
                     }
@@ -119,7 +163,17 @@ void rasterizer(Context& ctx,
                 Fragment frag{};
                 frag.pos = {px, py};
                 frag.coverage_mask = mask;
-                frag.depth = l0 * v0.pos[2] + l1 * v1.pos[2] + l2 * v2.pos[2];
+                frag.front_facing = (winding > 0.0f);
+                // Sprint 54 — constant-depth quads (dEQP base/visualisation
+                // quads) get exact depth, not the float-drifted sum. Without
+                // this, l0+l1+l2 ≠ 1 in float math flips boundary depth
+                // comparisons (LESS at z==buf returns true when it should be
+                // false, etc.) — closes most depth_stencil.stencil_depth_funcs.
+                if (v0.pos[2] == v1.pos[2] && v1.pos[2] == v2.pos[2]) {
+                    frag.depth = v0.pos[2];
+                } else {
+                    frag.depth = l0 * v0.pos[2] + l1 * v1.pos[2] + l2 * v2.pos[2];
+                }
                 frag.varying_count = std::max(v0.varying_count,
                                               std::max(v1.varying_count,
                                                        v2.varying_count));

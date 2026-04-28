@@ -34,7 +34,9 @@ struct DrawState {
         DF_GREATER, DF_NOTEQUAL, DF_ALWAYS, DF_NEVER,
     } depth_func = DF_LESS;
 
-    // Blend state (ES 2.0 subset; no logic op, no separate alpha blend).
+    // Blend state. Sprint 46 — full ES 2.0 surface (separate RGB / alpha
+    // factors and equations + constant blend color + GL_CONSTANT_* and
+    // GL_SRC_ALPHA_SATURATE factors). VK-GL-CTS fragment_ops.blend.*.
     bool blend_enable = false;
     enum BlendFactor : uint8_t {
         BF_ZERO, BF_ONE,
@@ -42,28 +44,61 @@ struct DrawState {
         BF_DST_COLOR,  BF_ONE_MINUS_DST_COLOR,
         BF_SRC_ALPHA,  BF_ONE_MINUS_SRC_ALPHA,
         BF_DST_ALPHA,  BF_ONE_MINUS_DST_ALPHA,
-    } blend_src = BF_SRC_ALPHA, blend_dst = BF_ONE_MINUS_SRC_ALPHA;
+        BF_CONSTANT_COLOR, BF_ONE_MINUS_CONSTANT_COLOR,
+        BF_CONSTANT_ALPHA, BF_ONE_MINUS_CONSTANT_ALPHA,
+        BF_SRC_ALPHA_SATURATE,
+    };
+    BlendFactor blend_src_rgb   = BF_SRC_ALPHA;
+    BlendFactor blend_dst_rgb   = BF_ONE_MINUS_SRC_ALPHA;
+    BlendFactor blend_src_alpha = BF_SRC_ALPHA;
+    BlendFactor blend_dst_alpha = BF_ONE_MINUS_SRC_ALPHA;
     enum BlendEq : uint8_t {
         BE_ADD, BE_SUBTRACT, BE_REVERSE_SUBTRACT,
-    } blend_eq = BE_ADD;
+    };
+    BlendEq blend_eq_rgb   = BE_ADD;
+    BlendEq blend_eq_alpha = BE_ADD;
+    Vec4f   blend_color    = {{0.0f, 0.0f, 0.0f, 0.0f}};
 
-    // Stencil state (Sprint 17)
+    // Stencil state. Sprint 46 — split into front + back faces (with the
+    // unsuffixed members kept as the front state for backward compat).
+    // PFO selects the right face via Fragment::front_facing.
     bool    stencil_test  = false;
     enum StencilFunc : uint8_t {
         SF_NEVER, SF_LESS, SF_LEQUAL, SF_GREATER, SF_GEQUAL,
         SF_EQUAL, SF_NOTEQUAL, SF_ALWAYS,
-    } stencil_func = SF_ALWAYS;
+    };
     enum StencilOp : uint8_t {
         SO_KEEP, SO_ZERO, SO_REPLACE, SO_INCR, SO_DECR, SO_INVERT,
-    } sop_fail = SO_KEEP, sop_zfail = SO_KEEP, sop_zpass = SO_KEEP;
-    uint8_t stencil_ref      = 0;
-    uint8_t stencil_read_mask  = 0xFF;
-    uint8_t stencil_write_mask = 0xFF;
+        SO_INCR_WRAP, SO_DECR_WRAP,
+    };
+    // Front-face state (also used as the unified state when glStencilFunc
+    // / glStencilOp / glStencilMask is called instead of the *Separate forms).
+    StencilFunc stencil_func = SF_ALWAYS;
+    StencilOp   sop_fail  = SO_KEEP;
+    StencilOp   sop_zfail = SO_KEEP;
+    StencilOp   sop_zpass = SO_KEEP;
+    uint8_t stencil_ref         = 0;
+    uint8_t stencil_read_mask   = 0xFF;
+    uint8_t stencil_write_mask  = 0xFF;
+    // Back-face state — initialised to mirror the front so existing tests
+    // that only set the unified state see identical behaviour.
+    StencilFunc stencil_func_back = SF_ALWAYS;
+    StencilOp   sop_fail_back  = SO_KEEP;
+    StencilOp   sop_zfail_back = SO_KEEP;
+    StencilOp   sop_zpass_back = SO_KEEP;
+    uint8_t stencil_ref_back         = 0;
+    uint8_t stencil_read_mask_back   = 0xFF;
+    uint8_t stencil_write_mask_back  = 0xFF;
 
     // Scissor (Sprint 17). When enabled, fragments outside the box are
     // discarded by the rasterizer (treated as zero coverage).
     bool    scissor_enable = false;
     int32_t scissor_x = 0, scissor_y = 0, scissor_w = 0, scissor_h = 0;
+
+    // Color buffer write mask (Sprint 43, RGBA). false = preserve the
+    // existing channel of the destination. Applied by PFO on draws and by
+    // glcompat::glClear so the masked CTS clear-tests reproduce.
+    bool color_writemask[4] = {true, true, true, true};
 
     bool cull_back   = false;
     bool a2c         = false;
@@ -74,8 +109,11 @@ struct DrawState {
     int32_t vp_w = 0;
     int32_t vp_h = 0;
 
-    // Uniform constant bank (c0..c15) used by both VS and FS in this skeleton.
-    std::array<Vec4f, 16> uniforms{};
+    // Uniform constant bank (c0..c31) used by both VS and FS. Sprint 56 —
+    // grew from 16 to 32 (the ISA s0idx field is 5 bits, so 32 slots are
+    // already addressable). The bigger c-bank lets dEQP's random shaders
+    // pack their VS+FS uniforms + literals without colliding.
+    std::array<Vec4f, 32> uniforms{};
 };
 
 struct BoundShaderPair {

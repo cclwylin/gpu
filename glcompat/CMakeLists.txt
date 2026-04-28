@@ -12,6 +12,7 @@ add_library(gpu_glcompat STATIC
     src/glcompat_glut_geom.cpp
     src/glcompat_font_bitmap.cpp
     src/glcompat_eval.cpp
+    src/glcompat_es2.cpp
 )
 target_include_directories(gpu_glcompat PUBLIC include)
 target_link_libraries(gpu_glcompat PUBLIC gpu_sw_ref gpu_compiler)
@@ -22,6 +23,7 @@ set_target_properties(gpu_glcompat PROPERTIES POSITION_INDEPENDENT_CODE ON)
 option(GPU_BUILD_GL_EXAMPLES "Build tests/examples/*.c as glcompat binaries" ON)
 if(GPU_BUILD_GL_EXAMPLES)
     file(GLOB GL_EXAMPLE_C "${CMAKE_SOURCE_DIR}/tests/examples/*.c")
+    list(FILTER GL_EXAMPLE_C EXCLUDE REGEX "/\\._")   # drop macOS AppleDouble shadows
     # Helper-only files (no main()) — included by other examples, not
     # built standalone. Linked into specific examples that need them.
     set(_glex_skip

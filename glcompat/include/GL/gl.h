@@ -116,6 +116,17 @@ typedef void          GLvoid;
 #define GL_ONE_MINUS_DST_ALPHA   0x0305
 #define GL_DST_COLOR             0x0306
 #define GL_ONE_MINUS_DST_COLOR   0x0307
+#define GL_SRC_ALPHA_SATURATE    0x0308
+#define GL_CONSTANT_COLOR        0x8001
+#define GL_ONE_MINUS_CONSTANT_COLOR 0x8002
+#define GL_CONSTANT_ALPHA        0x8003
+#define GL_ONE_MINUS_CONSTANT_ALPHA 0x8004
+
+// Blend equations (Sprint 46 — VK-GL-CTS fragment_ops.blend coverage).
+#define GL_FUNC_ADD              0x8006
+#define GL_FUNC_SUBTRACT         0x800A
+#define GL_FUNC_REVERSE_SUBTRACT 0x800B
+#define GL_BLEND_COLOR           0x8005
 
 // Light parameters.
 #define GL_AMBIENT               0x1200
@@ -151,6 +162,9 @@ typedef void          GLvoid;
 #define GL_LUMINANCE_ALPHA       0x190A
 #define GL_ABGR_EXT              0x8000
 #define GL_UNSIGNED_BYTE         0x1401
+#define GL_BYTE                  0x1400
+#define GL_SHORT                 0x1402
+#define GL_FIXED                 0x140C
 #define GL_FLOAT                 0x1406
 
 // Hints.
@@ -175,6 +189,28 @@ typedef void          GLvoid;
 #define GL_RENDERER              0x1F01
 #define GL_VERSION               0x1F02
 #define GL_EXTENSIONS            0x1F03
+
+// Implementation limits (Sprint 44 — VK-GL-CTS implementation_limits.*).
+// Values returned by glGetIntegerv / glGetFloatv / glGetBooleanv.
+#define GL_MAX_TEXTURE_SIZE                  0x0D33
+#define GL_MAX_VIEWPORT_DIMS                 0x0D3A
+#define GL_SUBPIXEL_BITS                     0x0D50
+#define GL_ALIASED_POINT_SIZE_RANGE          0x846D
+#define GL_ALIASED_LINE_WIDTH_RANGE          0x846E
+#define GL_MAX_RENDERBUFFER_SIZE             0x84E8
+#define GL_MAX_CUBE_MAP_TEXTURE_SIZE         0x851C
+#define GL_NUM_COMPRESSED_TEXTURE_FORMATS    0x86A2
+#define GL_COMPRESSED_TEXTURE_FORMATS        0x86A3
+#define GL_MAX_VERTEX_ATTRIBS                0x8869
+#define GL_MAX_TEXTURE_IMAGE_UNITS           0x8872
+#define GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS    0x8B4C
+#define GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS  0x8B4D
+#define GL_NUM_SHADER_BINARY_FORMATS         0x8DF9
+#define GL_SHADER_COMPILER                   0x8DFA
+#define GL_MAX_VERTEX_UNIFORM_VECTORS        0x8DFB
+#define GL_MAX_VARYING_VECTORS               0x8DFC
+#define GL_MAX_FRAGMENT_UNIFORM_VECTORS      0x8DFD
+#define GL_SHADER_BINARY_FORMATS             0x8DF8
 
 // ------------------------------------------------------------ entry points
 void glBegin(GLenum mode);
@@ -234,6 +270,13 @@ GLboolean glIsEnabled(GLenum cap);
 void glDepthFunc(GLenum func);
 void glDepthMask(GLboolean flag);
 void glBlendFunc(GLenum sf, GLenum df);
+void glBlendFuncSeparate(GLenum sfRGB, GLenum dfRGB, GLenum sfA, GLenum dfA);
+void glBlendEquation(GLenum eq);
+void glBlendEquationSeparate(GLenum eqRGB, GLenum eqA);
+void glBlendColor(GLfloat r, GLfloat g, GLfloat b, GLfloat a);
+void glStencilFuncSeparate(GLenum face, GLenum func, GLint ref, GLuint mask);
+void glStencilOpSeparate(GLenum face, GLenum sfail, GLenum dpfail, GLenum dppass);
+void glStencilMaskSeparate(GLenum face, GLuint mask);
 void glAlphaFunc(GLenum func, GLclampf ref);
 void glCullFace(GLenum mode);
 void glFrontFace(GLenum mode);
@@ -362,6 +405,8 @@ void glStencilMask(GLuint mask);
 #define GL_INCR                  0x1E02
 #define GL_DECR                  0x1E03
 #define GL_INVERT                0x150A
+#define GL_INCR_WRAP             0x8507
+#define GL_DECR_WRAP             0x8508
 
 // Texture env.
 #define GL_TEXTURE_ENV           0x2300
@@ -549,6 +594,116 @@ void glPolygonOffset(GLfloat factor, GLfloat units);
 void glVertex4fv(const GLfloat* v);
 void glPushClientAttrib(GLbitfield);
 void glPopClientAttrib(void);
+
+/* ------------------------------------------------------------------ *
+ * GL ES 2.0 surface (Sprint 36 — glmark2 follow-ups #6/#8/#9).
+ * Lives next to the legacy 1.x API so the same gl.h serves both
+ * dinoshade-style immediate-mode programs and glmark2-style
+ * VBO+shader programs.
+ * ------------------------------------------------------------------ */
+
+/* Buffer / shader / program / FBO enums */
+#define GL_ARRAY_BUFFER          0x8892
+#define GL_ELEMENT_ARRAY_BUFFER  0x8893
+#define GL_STATIC_DRAW           0x88E4
+#define GL_DYNAMIC_DRAW          0x88E8
+#define GL_STREAM_DRAW           0x88E0
+#define GL_WRITE_ONLY            0x88B9
+#define GL_READ_ONLY             0x88B8
+#define GL_READ_WRITE            0x88BA
+
+#define GL_FRAGMENT_SHADER       0x8B30
+#define GL_VERTEX_SHADER         0x8B31
+#define GL_COMPILE_STATUS        0x8B81
+#define GL_LINK_STATUS           0x8B82
+#define GL_VALIDATE_STATUS       0x8B83
+#define GL_INFO_LOG_LENGTH       0x8B84
+
+#define GL_FRAMEBUFFER           0x8D40
+#define GL_RENDERBUFFER          0x8D41
+#define GL_FRAMEBUFFER_COMPLETE  0x8CD5
+#define GL_COLOR_ATTACHMENT0     0x8CE0
+#define GL_DEPTH_ATTACHMENT      0x8D00
+#define GL_STENCIL_ATTACHMENT    0x8D20
+#define GL_DEPTH_COMPONENT16     0x81A5
+#define GL_DEPTH_COMPONENT24     0x81A6
+#define GL_STENCIL_INDEX8        0x8D48
+
+#define GL_ACTIVE_TEXTURE        0x84E0
+#define GL_TEXTURE0              0x84C0
+
+#define GL_UNSIGNED_SHORT        0x1403
+#define GL_UNSIGNED_INT          0x1405
+#define GL_DEPTH_WRITEMASK       0x0B72
+
+/* Buffer objects */
+void   glGenBuffers   (GLsizei n, GLuint* buffers);
+void   glDeleteBuffers(GLsizei n, const GLuint* buffers);
+void   glBindBuffer   (GLenum target, GLuint buffer);
+void   glBufferData   (GLenum target, GLsizei size, const void* data, GLenum usage);
+void   glBufferSubData(GLenum target, GLsizei offset, GLsizei size, const void* data);
+void*  glMapBuffer    (GLenum target, GLenum access);
+GLboolean glUnmapBuffer(GLenum target);
+
+/* Shader objects */
+GLuint glCreateShader (GLenum type);
+void   glDeleteShader (GLuint shader);
+void   glShaderSource (GLuint shader, GLsizei count, const char** string, const GLint* length);
+void   glCompileShader(GLuint shader);
+void   glGetShaderiv  (GLuint shader, GLenum pname, GLint* params);
+void   glGetShaderInfoLog(GLuint shader, GLsizei buf_len, GLsizei* len, char* log);
+
+/* Program objects */
+GLuint glCreateProgram (void);
+void   glDeleteProgram (GLuint prog);
+void   glAttachShader  (GLuint prog, GLuint shader);
+void   glLinkProgram   (GLuint prog);
+void   glUseProgram    (GLuint prog);
+void   glGetProgramiv  (GLuint prog, GLenum pname, GLint* params);
+void   glGetProgramInfoLog(GLuint prog, GLsizei buf_len, GLsizei* len, char* log);
+GLint  glGetUniformLocation(GLuint prog, const char* name);
+GLint  glGetAttribLocation (GLuint prog, const char* name);
+void   glBindAttribLocation(GLuint prog, GLuint index, const char* name);
+
+/* Uniforms */
+void   glUniform1i (GLint loc, GLint v);
+void   glUniform1f (GLint loc, GLfloat v);
+void   glUniform2fv(GLint loc, GLsizei count, const GLfloat* v);
+void   glUniform3fv(GLint loc, GLsizei count, const GLfloat* v);
+void   glUniform4fv(GLint loc, GLsizei count, const GLfloat* v);
+void   glUniformMatrix3fv(GLint loc, GLsizei count, GLboolean transpose, const GLfloat* v);
+void   glUniformMatrix4fv(GLint loc, GLsizei count, GLboolean transpose, const GLfloat* v);
+
+/* Vertex attribs + draws */
+void   glEnableVertexAttribArray (GLuint index);
+void   glDisableVertexAttribArray(GLuint index);
+void   glVertexAttribPointer     (GLuint index, GLint size, GLenum type,
+                                  GLboolean normalized, GLsizei stride,
+                                  const void* pointer);
+void   glDrawArrays  (GLenum mode, GLint first, GLsizei count);
+void   glDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices);
+
+/* Texture extras (1.x already has glBindTexture etc.) */
+void   glActiveTexture(GLenum texture);
+void   glGenerateMipmap(GLenum target);
+
+/* FBO (stub: only default framebuffer at v1) */
+void   glGenFramebuffers   (GLsizei n, GLuint* fb);
+void   glDeleteFramebuffers(GLsizei n, const GLuint* fb);
+void   glBindFramebuffer   (GLenum target, GLuint fb);
+GLenum glCheckFramebufferStatus(GLenum target);
+void   glFramebufferTexture2D(GLenum target, GLenum att, GLenum textarget, GLuint tex, GLint level);
+void   glGenRenderbuffers  (GLsizei n, GLuint* rb);
+void   glDeleteRenderbuffers(GLsizei n, const GLuint* rb);
+void   glBindRenderbuffer  (GLenum target, GLuint rb);
+void   glRenderbufferStorage(GLenum target, GLenum internalformat, GLsizei w, GLsizei h);
+void   glFramebufferRenderbuffer(GLenum target, GLenum att, GLenum rbtarget, GLuint rb);
+
+/* Misc */
+void   glClearDepthf (GLclampf d);
+void   glReadPixels  (GLint x, GLint y, GLsizei w, GLsizei h, GLenum format, GLenum type, void* pixels);
+void   glGetBooleanv (GLenum pname, GLboolean* params);
+GLboolean glIsEnabled(GLenum cap);
 
 #ifdef __cplusplus
 }  // extern "C"

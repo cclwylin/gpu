@@ -55,6 +55,10 @@ struct Fragment {
     std::array<Vec4f, 7> varying{};
     float depth = 0.0f;
     uint8_t varying_count = 0;
+    // Sprint 46 — set by the rasterizer from sign(area). PFO uses it to
+    // pick front/back stencil state for VK-GL-CTS fragment_ops.depth_stencil.*
+    // (which submits back-facing geometry expecting separate back stencil).
+    bool front_facing = true;
 };
 
 struct Pixel {

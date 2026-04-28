@@ -98,7 +98,12 @@ int main() {
         if (blue == 0) { std::fprintf(stderr, "FAIL: no back-tri pixels (depth blocked everything?)\n"); return 1; }
         // Critically: back triangle must NOT have overwritten any red pixel.
         // We can't tell from counts alone, but we sample a known overlap point.
-        const int cx = W / 4, cy = H / 4;
+        // Sprint 46 — pick (4, 12) which is strictly interior to the front
+        // triangle (its right edge is the y=x diagonal — pixel-centre (8.5,
+        // 8.5) lies *on* that edge, which the GLES top-left fill rule
+        // excludes from front but includes in back, so the prior choice of
+        // (W/4, H/4) was checking a value the spec leaves to the back).
+        const int cx = 4, cy = 12;
         const uint32_t mid = ctx.fb.color[cy * W + cx];
         const uint8_t r = mid & 0xFF;
         if (r != 255) {
@@ -115,10 +120,13 @@ int main() {
         // Background = solid red (pre-fill the FB).
         for (auto& p : ctx.fb.color) p = pack(255, 0, 0, 255);
 
-        ctx.draw.blend_enable = true;
-        ctx.draw.blend_src = gpu::DrawState::BF_SRC_ALPHA;
-        ctx.draw.blend_dst = gpu::DrawState::BF_ONE_MINUS_SRC_ALPHA;
-        ctx.draw.blend_eq  = gpu::DrawState::BE_ADD;
+        ctx.draw.blend_enable    = true;
+        ctx.draw.blend_src_rgb   = gpu::DrawState::BF_SRC_ALPHA;
+        ctx.draw.blend_dst_rgb   = gpu::DrawState::BF_ONE_MINUS_SRC_ALPHA;
+        ctx.draw.blend_src_alpha = gpu::DrawState::BF_SRC_ALPHA;
+        ctx.draw.blend_dst_alpha = gpu::DrawState::BF_ONE_MINUS_SRC_ALPHA;
+        ctx.draw.blend_eq_rgb    = gpu::DrawState::BE_ADD;
+        ctx.draw.blend_eq_alpha  = gpu::DrawState::BE_ADD;
 
         // 50%-alpha green triangle covering centre.
         std::array<gpu::Vec4f, 3> pos = {
